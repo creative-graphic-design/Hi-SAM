@@ -1,24 +1,19 @@
 import io
-import os
-import tempfile
-import warnings
-from typing import List, Literal, Optional
+from typing import List, Literal
 
 import cv2
 import numpy as np
 import torch
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import JSONResponse, Response
+from fastapi import Depends, FastAPI, HTTPException, UploadFile
+from fastapi.responses import Response
 from huggingface_hub import hf_hub_download
 from pydantic import BaseModel, field_validator
 
 from hi_sam.demo.config_utils import get_detection_params
 from hi_sam.demo.mask_utils import create_binary_mask
-from hi_sam.demo.visualization import create_masks_image, show_masks
+from hi_sam.demo.visualization import create_masks_image
 from hi_sam.modeling.auto_mask_generator import AutoMaskGenerator
 from hi_sam.modeling.build import model_registry
-
-warnings.filterwarnings("ignore")
 
 app = FastAPI(title="Hi-SAM Text Detection API", version="1.0.0")
 
@@ -61,27 +56,28 @@ class Args:
         self.layout_thresh = config.layout_thresh
 
 
-# Global variables for model
-model = None
-amg = None
-current_config = None
+class ModelService:
+    def __init__(self):
+        self.model = None
+        self.amg = None
+        self.current_config = None
 
+    def initialize_model(self, config: TextDetectionConfig):
+        if self.current_config is None or self.current_config != config:
+            torch.manual_seed(config.seed)
+            np.random.seed(config.seed)
+            torch.cuda.manual_seed(config.seed)
+            torch.cuda.manual_seed_all(config.seed)
 
-def initialize_model(config: TextDetectionConfig):
-    global model, amg, current_config
+            args = Args(config)
+            self.model = model_registry[config.model_type](args)
+            self.model.eval()
+            self.model.to(config.device)
+            self.amg = AutoMaskGenerator(self.model)
+            self.current_config = config
 
-    if current_config is None or current_config != config:
-        torch.manual_seed(config.seed)
-        np.random.seed(config.seed)
-        torch.cuda.manual_seed(config.seed)
-        torch.cuda.manual_seed_all(config.seed)
-
-        args = Args(config)
-        model = model_registry[config.model_type](args)
-        model.eval()
-        model.to(config.device)
-        amg = AutoMaskGenerator(model)
-        current_config = config
+    def get_amg(self):
+        return self.amg
 
 
 @app.get("/")
@@ -92,6 +88,12 @@ async def root():
 @app.get("/health")
 async def health_check():
     return {"status": "healthy"}
+
+
+def get_model_service() -> ModelService:
+    if not hasattr(get_model_service, "_instance"):
+        get_model_service._instance = ModelService()
+    return get_model_service._instance
 
 
 @app.post("/detect-text")
@@ -113,6 +115,7 @@ async def detect_text(
     ] = "ctw1500",
     zero_shot: bool = False,
     save_mask: bool = False,
+    service: ModelService = Depends(get_model_service),
 ):
     # Create config
     config = TextDetectionConfig(
@@ -124,7 +127,7 @@ async def detect_text(
     )
 
     # Initialize model if needed
-    initialize_model(config)
+    service.initialize_model(config)
 
     # Read image
     contents = await file.read()
@@ -146,6 +149,7 @@ async def detect_text(
         raise HTTPException(status_code=400, detail=str(e))
 
     # Run text detection
+    amg = service.get_amg()
     amg.set_image(image)
     masks, scores = amg.predict_text_detection(
         from_low_res=False,
