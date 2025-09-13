@@ -55,6 +55,7 @@ def get_args_parser():
     )
     parser.add_argument("--vis", action="store_true")
     parser.add_argument("--zero_shot", action="store_true")
+    parser.add_argument("--save_mask", action="store_true", help="Save binary mask image (white text, black background)")
 
     parser.add_argument("--seed", default=42, type=int)
     parser.add_argument("--input_size", default=[1024, 1024], type=list)
@@ -161,6 +162,19 @@ def show_masks(masks, filename, image):
     plt.close()
 
 
+def create_binary_mask(masks, image_shape):
+    h, w = image_shape[:2]
+    binary_mask = np.zeros((h, w), dtype=np.uint8)
+
+    if masks is not None:
+        for mask in masks:
+            mask_data = mask[0].astype(np.uint8)
+            binary_mask = np.logical_or(binary_mask, mask_data).astype(np.uint8)
+
+    binary_mask = binary_mask * 255
+    return binary_mask
+
+
 if __name__ == "__main__":
     args = get_args_parser()
     seed = args.seed
@@ -207,9 +221,11 @@ if __name__ == "__main__":
             assert os.path.isdir(args.output), args.output
             img_name = os.path.basename(path).split(".")[0] + ".png"
             out_filename = os.path.join(args.output, img_name)
+            mask_filename = os.path.join(args.output, os.path.basename(path).split(".")[0] + "_mask.png")
         else:
             assert len(args.input) == 1
             out_filename = args.output
+            mask_filename = os.path.splitext(args.output)[0] + "_mask.png"
 
         image = cv2.imread(path)
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)  # h, w, 3
@@ -229,5 +245,10 @@ if __name__ == "__main__":
         if masks is not None:
             print("Inference done. Start plotting masks.")
             show_masks(masks, out_filename, image)
+
+            if args.save_mask:
+                binary_mask = create_binary_mask(masks, image.shape)
+                cv2.imwrite(mask_filename, binary_mask)
+                print(f"Binary mask saved to: {mask_filename}")
         else:
             print("no prediction")
