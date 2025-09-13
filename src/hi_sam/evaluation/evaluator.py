@@ -1,15 +1,14 @@
 import copy
-import io
 import itertools
-import json
-import numpy as np
-import os
-import torch
 from collections import OrderedDict
+
+import numpy as np
+import torch
+
 from utils import misc
 
 
-class Evaluator():
+class Evaluator:
     def __init__(self, dataset_name, args, distributed, output_dir=None):
         self._distributed = distributed
         self._output_dir = output_dir
@@ -19,22 +18,22 @@ class Evaluator():
             self.dataset_name = "totaltext"
             self.class_num = 2
             self.semantic_classname = {
-                0: 'background',
-                1: 'text',
+                0: "background",
+                1: "text",
             }
         elif "HierText" in dataset_name:
             self.dataset_name = "hiertext"
             self.class_num = 2
             self.semantic_classname = {
-                0: 'background',
-                1: 'text',
+                0: "background",
+                1: "text",
             }
         elif "TextSeg" in dataset_name:
             self.dataset_name = "textseg"
             self.class_num = 2
             self.semantic_classname = {
-                0: 'background',
-                1: 'text',
+                0: "background",
+                1: "text",
             }
         else:
             raise NotImplementedError
@@ -49,8 +48,8 @@ class Evaluator():
         assert hr_predictions.shape == gts.shape
         if ignore_mask is not None:
             assert ignore_mask.shape == gts.shape
-            predictions[ignore_mask==255] = False
-            hr_predictions[ignore_mask==255] = False
+            predictions[ignore_mask == 255] = False
+            hr_predictions[ignore_mask == 255] = False
         for pred, hr_pred, gt in zip(predictions, hr_predictions, gts):
             pred = pred.squeeze(0).to(self._cpu_device).detach().numpy()  # h, w
             hr_pred = hr_pred.squeeze(0).to(self._cpu_device).detach().numpy()  # h, w
@@ -58,7 +57,7 @@ class Evaluator():
 
             img_result_dict = self.get_IandU(pred, gt)
             pn = self.label_count(pred)
-            gn = self.label_count((gt>127).astype(int))
+            gn = self.label_count((gt > 127).astype(int))
             img_result_dict.update(pred_num=pn, gt_num=gn)
             self._predictions.append(img_result_dict)
 
@@ -92,12 +91,12 @@ class Evaluator():
 
         cmp = np.bincount((pred + gt * bdd_index).flatten())
         cm = np.zeros((bdd_index * bdd_index)).astype(int)
-        cm[0:len(cmp)] = cmp
+        cm[0 : len(cmp)] = cmp
         cm = cm.reshape(bdd_index, bdd_index)
         pdn = cm.sum(axis=0)
         gtn = cm.sum(axis=1)
         tp = np.diag(cm)
-        intersection = tp[:max_index].tolist() # remove ignore
+        intersection = tp[:max_index].tolist()  # remove ignore
         union = pdn + gtn - tp
         union = union[:max_index].tolist()
         return {"intersection": intersection, "union": union}
@@ -173,7 +172,7 @@ class Evaluator():
 
         pn_save = copy.deepcopy(final_pn)
         gn_save = copy.deepcopy(final_gn)
-        '''image-wise fscore'''
+        """image-wise fscore"""
         pn_save[final_pn == 0] = 1
         gn_save[final_gn == 0] = 1
         prec_imwise = final_i.astype(float) / (pn_save.astype(float))
@@ -192,14 +191,24 @@ class Evaluator():
         recl_imwise_hr[final_gn == 0] = 0
         prec_imwise_hr = prec_imwise_hr.mean(axis=0)
         recl_imwise_hr = recl_imwise_hr.mean(axis=0)
-        fscore_imwise_hr = 2 * prec_imwise_hr * recl_imwise_hr / (prec_imwise_hr + recl_imwise_hr)
+        fscore_imwise_hr = (
+            2 * prec_imwise_hr * recl_imwise_hr / (prec_imwise_hr + recl_imwise_hr)
+        )
 
-        self._results['---mIOU'] = float(miou)
-        self._results['---mIOU_hr'] = float(miou_hr)
+        self._results["---mIOU"] = float(miou)
+        self._results["---mIOU_hr"] = float(miou_hr)
         for idx in range(1, len(iou)):  # ignore background
-            self._results[str(idx).zfill(3)+'-'+self.semantic_classname[idx]+'-IOU'] = float(iou[idx])
-            self._results[str(idx).zfill(3) + '-' + self.semantic_classname[idx] + '-Fscore'] = float(fscore_imwise[idx])
-            self._results[str(idx).zfill(3) + '-' + self.semantic_classname[idx] + '-IOU_hr'] = float(iou_hr[idx])
-            self._results[str(idx).zfill(3) + '-' + self.semantic_classname[idx] + '-Fscore_hr'] = float(fscore_imwise_hr[idx])
+            self._results[
+                str(idx).zfill(3) + "-" + self.semantic_classname[idx] + "-IOU"
+            ] = float(iou[idx])
+            self._results[
+                str(idx).zfill(3) + "-" + self.semantic_classname[idx] + "-Fscore"
+            ] = float(fscore_imwise[idx])
+            self._results[
+                str(idx).zfill(3) + "-" + self.semantic_classname[idx] + "-IOU_hr"
+            ] = float(iou_hr[idx])
+            self._results[
+                str(idx).zfill(3) + "-" + self.semantic_classname[idx] + "-Fscore_hr"
+            ] = float(fscore_imwise_hr[idx])
 
         return copy.deepcopy(self._results)

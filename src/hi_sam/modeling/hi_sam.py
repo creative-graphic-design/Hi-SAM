@@ -4,16 +4,16 @@
 # This source code is licensed under the license found in the
 # LICENSE file in the root directory of this source tree.
 
+from typing import Any, Dict, List, Tuple
+
 import torch
 from torch import nn
 from torch.nn import functional as F
 
-from typing import Any, Dict, List, Tuple
-
 from .image_encoder import ImageEncoderViT
-from .mask_decoder import MaskDecoder, HiDecoder
-from .prompt_encoder import PromptEncoder
+from .mask_decoder import MaskDecoder
 from .modal_aligner import ModalAligner
+from .prompt_encoder import PromptEncoder
 
 
 class HiSam(nn.Module):
@@ -42,7 +42,9 @@ class HiSam(nn.Module):
 
         self.modal_aligner = modal_aligner
         self.mask_decoder = mask_decoder
-        self.register_buffer("pixel_mean", torch.Tensor(pixel_mean).view(-1, 1, 1), False)
+        self.register_buffer(
+            "pixel_mean", torch.Tensor(pixel_mean).view(-1, 1, 1), False
+        )
         self.register_buffer("pixel_std", torch.Tensor(pixel_std).view(-1, 1, 1), False)
 
         self.hier_det = False
@@ -57,7 +59,9 @@ class HiSam(nn.Module):
         batched_input: List[Dict[str, Any]],
         multimask_output: bool,
     ):
-        input_images = torch.stack([self.preprocess(x["image"]) for x in batched_input], dim=0)
+        input_images = torch.stack(
+            [self.preprocess(x["image"]) for x in batched_input], dim=0
+        )
 
         image_embeddings = self.image_encoder(input_images)
         sparse_emb = self.modal_aligner(image_embeddings)
@@ -73,12 +77,14 @@ class HiSam(nn.Module):
             hi_iou_preds = []
             word_masks_logits = []
 
-        for image_record, curr_embedding, sparse_embeddings in zip(batched_input, image_embeddings, sparse_emb):
+        for image_record, curr_embedding, sparse_embeddings in zip(
+            batched_input, image_embeddings, sparse_emb
+        ):
             low_res_masks, high_res_masks, iou_pred, iou_pred_hr = self.mask_decoder(
                 image_embeddings=curr_embedding.unsqueeze(0),
                 image_pe=self.prompt_encoder.get_dense_pe(),
                 sparse_prompt_embeddings=sparse_embeddings.unsqueeze(0),
-                multimask_output=multimask_output
+                multimask_output=multimask_output,
             )
             iou_preds.append(iou_pred)
             iou_preds_hr.append(iou_pred_hr)
@@ -106,7 +112,7 @@ class HiSam(nn.Module):
                     image_embeddings=curr_embedding.unsqueeze(0),
                     image_pe=self.prompt_encoder.get_dense_pe(),
                     sparse_prompt_embeddings=point_embeddings,
-                    multimask_output=True
+                    multimask_output=True,
                 )
                 hi_masks_logits.append(hi_masks)
                 hi_iou_preds.append(hi_iou_pred)
@@ -123,10 +129,26 @@ class HiSam(nn.Module):
             hi_masks_logits = torch.cat(hi_masks_logits, dim=0)
             hi_iou_preds = torch.cat(hi_iou_preds, dim=0)
             word_masks_logits = torch.cat(word_masks_logits, dim=0)
-            return (up_masks_logits, up_masks, iou_preds, hr_masks_logits, hr_masks, iou_preds_hr,
-                    hi_masks_logits, hi_iou_preds, word_masks_logits)
+            return (
+                up_masks_logits,
+                up_masks,
+                iou_preds,
+                hr_masks_logits,
+                hr_masks,
+                iou_preds_hr,
+                hi_masks_logits,
+                hi_iou_preds,
+                word_masks_logits,
+            )
         else:
-            return up_masks_logits, up_masks, iou_preds, hr_masks_logits, hr_masks, iou_preds_hr
+            return (
+                up_masks_logits,
+                up_masks,
+                iou_preds,
+                hr_masks_logits,
+                hr_masks,
+                iou_preds_hr,
+            )
 
     def postprocess_masks(
         self,
@@ -156,7 +178,9 @@ class HiSam(nn.Module):
             align_corners=False,
         )
         masks = masks[..., : input_size[0], : input_size[1]]
-        masks = F.interpolate(masks, original_size, mode="bilinear", align_corners=False)
+        masks = F.interpolate(
+            masks, original_size, mode="bilinear", align_corners=False
+        )
         return masks
 
     def preprocess(self, x: torch.Tensor) -> torch.Tensor:

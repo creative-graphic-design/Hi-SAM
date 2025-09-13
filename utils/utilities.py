@@ -1,5 +1,5 @@
 import collections
-from typing import List, Optional, Union
+from typing import List
 
 
 class DisjointSet:
@@ -14,10 +14,10 @@ class DisjointSet:
 
     def find(self, item: int) -> int:
         if self._parent[item] == item:
-          return item
+            return item
         else:
-          self._parent[item] = self.find(self._parent[item])
-          return self._parent[item]
+            self._parent[item] = self.find(self._parent[item])
+            return self._parent[item]
 
     def union(self, i1: int, i2: int) -> None:
         r1 = self.find(i1)
@@ -33,6 +33,6 @@ class DisjointSet:
         """
         groups = collections.defaultdict(list)
         for i in range(self._num_elements):
-          r = self.find(i)
-          groups[r].append(i)
+            r = self.find(i)
+            groups[r].append(i)
         return list(groups.values())

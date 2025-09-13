@@ -4,11 +4,10 @@
 # This source code is licensed under the license found in the
 # LICENSE file in the root directory of this source tree.
 
+from typing import Type
+
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-
-from typing import Type
 
 
 class MLPBlock(nn.Module):
@@ -45,7 +44,9 @@ class LayerNorm2d(nn.Module):
 
 
 class Adapter(nn.Module):
-    def __init__(self, D_features, mlp_ratio=0.25, act_layer=nn.GELU, skip_connect=True):
+    def __init__(
+        self, D_features, mlp_ratio=0.25, act_layer=nn.GELU, skip_connect=True
+    ):
         super().__init__()
         self.skip_connect = skip_connect
         D_hidden_features = int(D_features * mlp_ratio)

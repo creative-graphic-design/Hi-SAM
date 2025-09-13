@@ -1,16 +1,10 @@
-# Copyright (c) Meta Platforms, Inc. and affiliates.
-# All rights reserved.
-
-# This source code is licensed under the license found in the
-# LICENSE file in the root directory of this source tree.
+import math
+from typing import Tuple, Type
 
 import torch
 from torch import Tensor, nn
 
-import math
-from typing import Tuple, Type
-
-from .common import MLPBlock
+from .mlp import MLPBlock
 
 
 class TwoWayTransformer(nn.Module):
@@ -20,7 +14,8 @@ class TwoWayTransformer(nn.Module):
         embedding_dim: int,
         num_heads: int,
         mlp_dim: int,
-        activation: Type[nn.Module] = nn.ReLU,
+        activation: Type[nn.Module],
+        normalize_before_activation: bool,
         attention_downsample_rate: int = 2,
     ) -> None:
         """
@@ -43,19 +38,21 @@ class TwoWayTransformer(nn.Module):
         self.layers = nn.ModuleList()
 
         for i in range(depth):
-            self.layers.append(
-                TwoWayAttentionBlock(
-                    embedding_dim=embedding_dim,
-                    num_heads=num_heads,
-                    mlp_dim=mlp_dim,
-                    activation=activation,
-                    attention_downsample_rate=attention_downsample_rate,
-                    skip_first_layer_pe=(i == 0),
-                )
+            curr_layer = TwoWayAttentionBlock(
+                embedding_dim=embedding_dim,
+                num_heads=num_heads,
+                mlp_dim=mlp_dim,
+                activation=activation,
+                normalize_before_activation=normalize_before_activation,
+                attention_downsample_rate=attention_downsample_rate,
+                skip_first_layer_pe=(i == 0),
             )
+            self.layers.append(curr_layer)
 
-        self.final_attn_token_to_image = Attention(
-            embedding_dim, num_heads, downsample_rate=attention_downsample_rate
+        self.final_attn_token_to_image = AttentionForTwoWayAttentionBlock(
+            embedding_dim,
+            num_heads,
+            downsample_rate=attention_downsample_rate,
         )
         self.norm_final_attn = nn.LayerNorm(embedding_dim)
 
@@ -78,6 +75,7 @@ class TwoWayTransformer(nn.Module):
           torch.Tensor: the processed point_embedding
           torch.Tensor: the processed image_embedding
         """
+
         # BxCxHxW -> BxHWxC == B x N_image_tokens x C
         bs, c, h, w = image_embedding.shape
         image_embedding = image_embedding.flatten(2).permute(0, 2, 1)
@@ -88,7 +86,7 @@ class TwoWayTransformer(nn.Module):
         keys = image_embedding
 
         # Apply transformer blocks and final layernorm
-        for layer in self.layers:
+        for idx, layer in enumerate(self.layers):
             queries, keys = layer(
                 queries=queries,
                 keys=keys,
@@ -96,13 +94,12 @@ class TwoWayTransformer(nn.Module):
                 key_pe=image_pe,
             )
 
-        # Apply the final attenion layer from the points to the image
+        # Apply the final attention layer from the points to the image
         q = queries + point_embedding
         k = keys + image_pe
         attn_out = self.final_attn_token_to_image(q=q, k=k, v=keys)
         queries = queries + attn_out
         queries = self.norm_final_attn(queries)
-
         return queries, keys
 
 
@@ -111,8 +108,9 @@ class TwoWayAttentionBlock(nn.Module):
         self,
         embedding_dim: int,
         num_heads: int,
-        mlp_dim: int = 2048,
-        activation: Type[nn.Module] = nn.ReLU,
+        mlp_dim: int,
+        activation: Type[nn.Module],
+        normalize_before_activation: bool,
         attention_downsample_rate: int = 2,
         skip_first_layer_pe: bool = False,
     ) -> None:
@@ -130,20 +128,31 @@ class TwoWayAttentionBlock(nn.Module):
           skip_first_layer_pe (bool): skip the PE on the first layer
         """
         super().__init__()
-        self.self_attn = Attention(embedding_dim, num_heads)
+        self.self_attn = AttentionForTwoWayAttentionBlock(embedding_dim, num_heads)
         self.norm1 = nn.LayerNorm(embedding_dim)
 
-        self.cross_attn_token_to_image = Attention(
-            embedding_dim, num_heads, downsample_rate=attention_downsample_rate
+        self.cross_attn_token_to_image = AttentionForTwoWayAttentionBlock(
+            embedding_dim,
+            num_heads,
+            downsample_rate=attention_downsample_rate,
         )
         self.norm2 = nn.LayerNorm(embedding_dim)
 
-        self.mlp = MLPBlock(embedding_dim, mlp_dim, activation)
+        self.mlp = MLPBlock(
+            embedding_dim,
+            mlp_dim,
+            embedding_dim,
+            1,
+            activation,
+        )
+
         self.norm3 = nn.LayerNorm(embedding_dim)
 
         self.norm4 = nn.LayerNorm(embedding_dim)
-        self.cross_attn_image_to_token = Attention(
-            embedding_dim, num_heads, downsample_rate=attention_downsample_rate
+        self.cross_attn_image_to_token = AttentionForTwoWayAttentionBlock(
+            embedding_dim,
+            num_heads,
+            downsample_rate=attention_downsample_rate,
         )
 
         self.skip_first_layer_pe = skip_first_layer_pe
@@ -152,12 +161,10 @@ class TwoWayAttentionBlock(nn.Module):
         self, queries: Tensor, keys: Tensor, query_pe: Tensor, key_pe: Tensor
     ) -> Tuple[Tensor, Tensor]:
         # Self attention block
-        if self.skip_first_layer_pe:
-            queries = self.self_attn(q=queries, k=queries, v=queries)
-        else:
-            q = queries + query_pe
-            attn_out = self.self_attn(q=q, k=q, v=queries)
-            queries = queries + attn_out
+        if not self.skip_first_layer_pe:
+            queries = queries + query_pe
+        attn_out = self.self_attn(q=queries, k=queries, v=queries)
+        queries = queries + attn_out
         queries = self.norm1(queries)
 
         # Cross attention block, tokens attending to image embedding
@@ -182,7 +189,7 @@ class TwoWayAttentionBlock(nn.Module):
         return queries, keys
 
 
-class Attention(nn.Module):
+class AttentionForTwoWayAttentionBlock(nn.Module):
     """
     An attention layer that allows for downscaling the size of the embedding
     after projection to queries, keys, and values.
@@ -198,12 +205,33 @@ class Attention(nn.Module):
         self.embedding_dim = embedding_dim
         self.internal_dim = embedding_dim // downsample_rate
         self.num_heads = num_heads
-        assert self.internal_dim % num_heads == 0, "num_heads must divide embedding_dim."
+        assert self.internal_dim % num_heads == 0, (
+            "num_heads must divide embedding_dim."
+        )
+        self.c_per_head = self.internal_dim / num_heads
+        self.inv_sqrt_c_per_head = 1.0 / math.sqrt(self.c_per_head)
 
         self.q_proj = nn.Linear(embedding_dim, self.internal_dim)
         self.k_proj = nn.Linear(embedding_dim, self.internal_dim)
         self.v_proj = nn.Linear(embedding_dim, self.internal_dim)
         self.out_proj = nn.Linear(self.internal_dim, embedding_dim)
+        self._reset_parameters()
+
+    def _reset_parameters(self) -> None:
+        # The fan_out is incorrect, but matches pytorch's initialization
+        # for which qkv is a single 3*embedding_dim x embedding_dim matrix
+        fan_in = self.embedding_dim
+        fan_out = 3 * self.internal_dim
+        # Xavier uniform with our custom fan_out
+        bnd = math.sqrt(6 / (fan_in + fan_out))
+        nn.init.uniform_(self.q_proj.weight, -bnd, bnd)
+        nn.init.uniform_(self.k_proj.weight, -bnd, bnd)
+        nn.init.uniform_(self.v_proj.weight, -bnd, bnd)
+        # out_proj.weight is left with default initialization, like pytorch attention
+        nn.init.zeros_(self.q_proj.bias)
+        nn.init.zeros_(self.k_proj.bias)
+        nn.init.zeros_(self.v_proj.bias)
+        nn.init.zeros_(self.out_proj.bias)
 
     def _separate_heads(self, x: Tensor, num_heads: int) -> Tensor:
         b, n, c = x.shape
@@ -229,12 +257,10 @@ class Attention(nn.Module):
         # Attention
         _, _, _, c_per_head = q.shape
         attn = q @ k.permute(0, 1, 3, 2)  # B x N_heads x N_tokens x N_tokens
-        attn = attn / math.sqrt(c_per_head)
+        attn = attn * self.inv_sqrt_c_per_head
         attn = torch.softmax(attn, dim=-1)
-
         # Get output
         out = attn @ v
         out = self._recombine_heads(out)
         out = self.out_proj(out)
-
         return out

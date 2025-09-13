@@ -1,15 +1,14 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-import sys
 
 # This source code is licensed under the license found in the
 # LICENSE file in the root directory of this source tree.
 
+from typing import Tuple
+
 import numpy as np
 import torch
-import torch.nn.functional as F
 
-from typing import Optional, Tuple
 from hi_sam.data.transforms import ResizeLongestSide
 
 
@@ -17,7 +16,7 @@ class AutoMaskGenerator:
     def __init__(
         self,
         sam_model,
-        efficient_hisam: bool=False,
+        efficient_hisam: bool = False,
     ) -> None:
         super().__init__()
         self.model = sam_model
@@ -52,7 +51,9 @@ class AutoMaskGenerator:
         # import pdb;pdb.set_trace()
         input_image = self.transform.apply_image(image)
         input_image_torch = torch.as_tensor(input_image, device=self.device)
-        input_image_torch = input_image_torch.permute(2, 0, 1).contiguous()[None, :, :, :]
+        input_image_torch = input_image_torch.permute(2, 0, 1).contiguous()[
+            None, :, :, :
+        ]
 
         self.set_torch_image(input_image_torch, image.shape[:2])
 
@@ -77,7 +78,9 @@ class AutoMaskGenerator:
             len(transformed_image.shape) == 4
             and transformed_image.shape[1] == 3
             and max(*transformed_image.shape[2:]) == self.model.image_encoder.img_size
-        ), f"set_torch_image input must be BCHW with long side {self.model.image_encoder.img_size}."
+        ), (
+            f"set_torch_image input must be BCHW with long side {self.model.image_encoder.img_size}."
+        )
         self.reset_image()
 
         self.original_size = original_image_size
@@ -87,10 +90,10 @@ class AutoMaskGenerator:
         self.is_image_set = True
 
     def set_fgmask(
-            self,
-            fgmask: np.ndarray,
+        self,
+        fgmask: np.ndarray,
     ) -> None:
-        assert (len(fgmask.shape) == 2 or len(fgmask.shape) == 3)
+        assert len(fgmask.shape) == 2 or len(fgmask.shape) == 3
         if len(fgmask.shape) > 2:
             fgmask = fgmask[:, :, 0]
         self.reset_fgmask()
@@ -101,28 +104,34 @@ class AutoMaskGenerator:
 
     @torch.no_grad()
     def forward_foreground_points(
-            self,
-            from_low_res: bool = False,
-            fg_points_num: int = 600
+        self, from_low_res: bool = False, fg_points_num: int = 600
     ):
         if not self.is_image_set:
-            raise RuntimeError("An image must be set with .set_image(...) before mask prediction.")
+            raise RuntimeError(
+                "An image must be set with .set_image(...) before mask prediction."
+            )
         if self.is_fgmask_set:
             fg_mask = self.fgmask
         else:
             sparse_emb = self.model.modal_aligner(self.features)
-            low_res_mask, high_res_mask, iou_pred, iou_pred_hr = self.model.mask_decoder(
-                image_embeddings=self.features,
-                image_pe=self.model.prompt_encoder.get_dense_pe(),
-                sparse_prompt_embeddings=sparse_emb,
-                multimask_output=False,
+            low_res_mask, high_res_mask, iou_pred, iou_pred_hr = (
+                self.model.mask_decoder(
+                    image_embeddings=self.features,
+                    image_pe=self.model.prompt_encoder.get_dense_pe(),
+                    sparse_prompt_embeddings=sparse_emb,
+                    multimask_output=False,
+                )
             )
             assert low_res_mask.shape[0] == 1, "only support one image per batch now"
 
             if from_low_res:
-                fg_mask = (low_res_mask > self.model.mask_threshold).squeeze(1)[0]  # (256, 256)
+                fg_mask = (low_res_mask > self.model.mask_threshold).squeeze(1)[
+                    0
+                ]  # (256, 256)
             else:
-                fg_mask = (high_res_mask > self.model.mask_threshold).squeeze(1)[0]  # (1024, 1024)
+                fg_mask = (high_res_mask > self.model.mask_threshold).squeeze(1)[
+                    0
+                ]  # (1024, 1024)
             del low_res_mask
             del high_res_mask
 
@@ -131,7 +140,7 @@ class AutoMaskGenerator:
 
         p_n = x_idx.size(0)
         perm = torch.randperm(p_n)
-        idx = perm[:min(p_n, fg_points_num)]
+        idx = perm[: min(p_n, fg_points_num)]
 
         y_idx, x_idx = y_idx[idx][:, None], x_idx[idx][:, None]
         fg_points = torch.cat((x_idx, y_idx), dim=1)[:, None, :]  # (k, 1, 2)
@@ -140,20 +149,18 @@ class AutoMaskGenerator:
         return fg_points
 
     @torch.no_grad()
-    def forward_hi_decoder(
-            self,
-            point_coords,
-            point_labels
-    ):
+    def forward_hi_decoder(self, point_coords, point_labels):
         if self.efficient_hisam:
             point_embeddings = self.model.prompt_encoder(point_coords, point_labels)
         else:
-            point_embeddings, _ = self.model.prompt_encoder(points=(point_coords, point_labels), boxes=None, masks=None)
+            point_embeddings, _ = self.model.prompt_encoder(
+                points=(point_coords, point_labels), boxes=None, masks=None
+            )
         hi_masks_logits, hi_iou_preds, word_masks_logits = self.model.hi_decoder(
             image_embeddings=self.features,
             image_pe=self.model.prompt_encoder.get_dense_pe(),
             sparse_prompt_embeddings=point_embeddings,
-            multimask_output=True
+            multimask_output=True,
         )
         return hi_masks_logits, hi_iou_preds, word_masks_logits
 
@@ -168,13 +175,19 @@ class AutoMaskGenerator:
         oracle_point_prompts: np.ndarray = None,
     ):
         if not self.is_image_set:
-            raise RuntimeError("An image must be set with .set_image(...) before mask prediction.")
+            raise RuntimeError(
+                "An image must be set with .set_image(...) before mask prediction."
+            )
         assert batch_points_num <= fg_points_num
 
         if oracle_point_prompts is not None:
             # resize point prompts
-            oracle_point_prompts = self.transform.apply_coords(oracle_point_prompts, self.original_size)
-            fg_points = torch.tensor(oracle_point_prompts, dtype=torch.int64, device=self.features.device)
+            oracle_point_prompts = self.transform.apply_coords(
+                oracle_point_prompts, self.original_size
+            )
+            fg_points = torch.tensor(
+                oracle_point_prompts, dtype=torch.int64, device=self.features.device
+            )
             fg_points = fg_points[:, None, :]
         else:
             fg_points = self.forward_foreground_points(from_low_res, fg_points_num)
@@ -187,7 +200,7 @@ class AutoMaskGenerator:
             end_idx = min(start_idx + batch_points_num, fg_points_num)
             hi_masks_logits, hi_iou_preds, word_masks_logits = self.forward_hi_decoder(
                 fg_points[start_idx:end_idx, :, :],
-                torch.ones((end_idx-start_idx, 1), device=fg_points.device)
+                torch.ones((end_idx - start_idx, 1), device=fg_points.device),
             )
             hi_masks_logits = hi_masks_logits[:, 1:, :, :]
             masks.append(hi_masks_logits)
@@ -210,7 +223,7 @@ class AutoMaskGenerator:
         # conduct mask nms, use 256x256 mask for nms to save memory and time
         updated_scores = matrix_nms(
             seg_masks=(masks[:, -2, :, :] > self.model.mask_threshold),
-            scores=scores[:, 1]
+            scores=scores[:, 1],
         )
         keep = updated_scores > nms_thresh
         if keep.sum() == 0:
@@ -218,10 +231,14 @@ class AutoMaskGenerator:
         masks = masks[keep]  # line and paragraph masks
         scores = scores[keep]
         word_masks = word_masks[keep]
-        affinity = get_para_iou(para_masks=(masks[:, -1, :, :] > self.model.mask_threshold))
-        
+        affinity = get_para_iou(
+            para_masks=(masks[:, -1, :, :] > self.model.mask_threshold)
+        )
+
         del masks
-        word_masks = self.model.postprocess_masks(word_masks, self.input_size, self.original_size)
+        word_masks = self.model.postprocess_masks(
+            word_masks, self.input_size, self.original_size
+        )
         word_masks = word_masks > self.model.mask_threshold
         masks_np = word_masks.cpu().numpy()
         scores_np = scores.cpu().numpy()
@@ -238,16 +255,22 @@ class AutoMaskGenerator:
         return_logits: bool = False,
         oracle_point_prompts: np.ndarray = None,
         zero_shot: bool = True,
-        dataset: str = 'totaltext'
+        dataset: str = "totaltext",
     ):
         if not self.is_image_set:
-            raise RuntimeError("An image must be set with .set_image(...) before mask prediction.")
+            raise RuntimeError(
+                "An image must be set with .set_image(...) before mask prediction."
+            )
         assert batch_points_num <= fg_points_num
 
         if oracle_point_prompts is not None:
             # resize point prompts
-            oracle_point_prompts = self.transform.apply_coords(oracle_point_prompts, self.original_size)
-            fg_points = torch.tensor(oracle_point_prompts, dtype=torch.int64, device=self.features.device)
+            oracle_point_prompts = self.transform.apply_coords(
+                oracle_point_prompts, self.original_size
+            )
+            fg_points = torch.tensor(
+                oracle_point_prompts, dtype=torch.int64, device=self.features.device
+            )
             fg_points = fg_points[:, None, :]
         else:
             fg_points = self.forward_foreground_points(from_low_res, fg_points_num)
@@ -260,7 +283,7 @@ class AutoMaskGenerator:
             end_idx = min(start_idx + batch_points_num, fg_points_num)
             hi_masks_logits, hi_iou_preds, word_masks_logits = self.forward_hi_decoder(
                 fg_points[start_idx:end_idx, :, :],
-                torch.ones((end_idx-start_idx, 1), device=fg_points.device)
+                torch.ones((end_idx - start_idx, 1), device=fg_points.device),
             )
             hi_masks_logits = hi_masks_logits[:, 1:, :, :]
             masks.append(hi_masks_logits)
@@ -273,7 +296,7 @@ class AutoMaskGenerator:
         word_masks = torch.cat(word_masks, dim=0)
 
         # filter low quality lines
-        if dataset != 'ctw1500' and not zero_shot:
+        if dataset != "ctw1500" and not zero_shot:
             scores[:, 1] = 1.0  # since no iou score prediction
         keep = scores[:, 1] > score_thresh
         if keep.sum() == 0:
@@ -282,32 +305,39 @@ class AutoMaskGenerator:
         scores = scores[keep]
         word_masks = word_masks[keep]
 
-        if dataset == 'totaltext' and zero_shot:
+        if dataset == "totaltext" and zero_shot:
             word_masks = word_masks > self.model.mask_threshold
             word_masks = (word_masks.sum(dim=0)[None, ...] > 0).type(torch.float32)
-            word_masks = self.model.postprocess_masks(word_masks, self.input_size, self.original_size) > 0
+            word_masks = (
+                self.model.postprocess_masks(
+                    word_masks, self.input_size, self.original_size
+                )
+                > 0
+            )
             masks_np = word_masks.cpu().numpy()
             return masks_np, None
         else:
-            if dataset != 'ctw1500' and not zero_shot:
+            if dataset != "ctw1500" and not zero_shot:
                 updated_scores = matrix_nms(
                     seg_masks=(word_masks[:, 0, :, :] > self.model.mask_threshold),
-                    scores=scores[:, 1]
+                    scores=scores[:, 1],
                 )
             else:
                 updated_scores = matrix_nms(
                     seg_masks=(masks[:, -2, :, :] > self.model.mask_threshold),
-                    scores=scores[:, 1]
+                    scores=scores[:, 1],
                 )
             keep = updated_scores > nms_thresh
             if keep.sum() == 0:
                 return None, None
-            if dataset == 'ctw1500':
+            if dataset == "ctw1500":
                 masks = masks[keep][:, 0:1, :, :]
             else:
                 masks = word_masks[keep][:, 0:1, :, :]
             scores = scores[keep][:, 1]
-            masks = self.model.postprocess_masks(masks, self.input_size, self.original_size)
+            masks = self.model.postprocess_masks(
+                masks, self.input_size, self.original_size
+            )
             masks = masks > self.model.mask_threshold
             masks_np = masks.cpu().numpy()
             scores_np = scores.cpu().numpy()
@@ -323,7 +353,9 @@ class AutoMaskGenerator:
             raise RuntimeError(
                 "An image must be set with .set_image(...) to generate an embedding."
             )
-        assert self.features is not None, "Features must exist if an image has been set."
+        assert self.features is not None, (
+            "Features must exist if an image has been set."
+        )
         return self.features
 
     @property
@@ -344,7 +376,7 @@ class AutoMaskGenerator:
         self.fgmask = None
 
 
-def matrix_nms(seg_masks, scores, kernel='gaussian', sigma=2.0, sum_masks=None):
+def matrix_nms(seg_masks, scores, kernel="gaussian", sigma=2.0, sum_masks=None):
     """Matrix NMS from SOLOv2
 
     Args:
@@ -364,18 +396,20 @@ def matrix_nms(seg_masks, scores, kernel='gaussian', sigma=2.0, sum_masks=None):
     # union
     sum_masks = sum_masks.expand(n_samples, n_samples)
     # iou
-    iou_matrix = (inter_matrix / (sum_masks + sum_masks.transpose(1, 0) - inter_matrix)).triu(diagonal=1)
+    iou_matrix = (
+        inter_matrix / (sum_masks + sum_masks.transpose(1, 0) - inter_matrix)
+    ).triu(diagonal=1)
     # IOU compensation
     compensate_iou, _ = iou_matrix.max(0)
     compensate_iou = compensate_iou.expand(n_samples, n_samples).transpose(1, 0)
     # IOU decay
     decay_iou = iou_matrix  # no label matrix because there is only one foreground class
 
-    if kernel == 'gaussian':
-        decay_matrix = torch.exp(-1 * sigma * (decay_iou ** 2))
-        compensate_matrix = torch.exp(-1 * sigma * (compensate_iou ** 2))
+    if kernel == "gaussian":
+        decay_matrix = torch.exp(-1 * sigma * (decay_iou**2))
+        compensate_matrix = torch.exp(-1 * sigma * (compensate_iou**2))
         decay_coef, _ = (decay_matrix / compensate_matrix).min(0)
-    elif kernel == 'linear':
+    elif kernel == "linear":
         decay_matrix = (1 - decay_iou) / (1 - compensate_iou)
         decay_coef, _ = decay_matrix.min(0)
     else:
@@ -386,15 +420,15 @@ def matrix_nms(seg_masks, scores, kernel='gaussian', sigma=2.0, sum_masks=None):
 
 def get_para_iou(para_masks):
     """
-        Args:
-            para_masks (Tensor): shape (n, h, w)
-        """
+    Args:
+        para_masks (Tensor): shape (n, h, w)
+    """
     n_samples = len(para_masks)
     sum_masks = para_masks.sum((1, 2)).float()
     para_masks = para_masks.reshape(n_samples, -1).float()
     inter_matrix = torch.mm(para_masks, para_masks.transpose(1, 0))
     # del para_masks
     sum_masks = sum_masks.expand(n_samples, n_samples)
-    iou_matrix = (inter_matrix / (sum_masks + sum_masks.transpose(1, 0) - inter_matrix))
+    iou_matrix = inter_matrix / (sum_masks + sum_masks.transpose(1, 0) - inter_matrix)
 
     return iou_matrix

@@ -1,30 +1,27 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-import pdb
 
 # This source code is licensed under the license found in the
 # LICENSE file in the root directory of this source tree.
 
+import os
+from functools import partial
+
 import torch
 from torch import nn
 
-from functools import partial
-import copy
-import os
-
-from .image_encoder import ImageEncoderViT
-from .mask_decoder import MaskDecoder, HiDecoder
-from .prompt_encoder import PromptEncoder
-from .hi_sam import HiSam
-from .transformer import TwoWayTransformer
-from .modal_aligner import ModalAligner
-
 from .efficient_hi_sam import EfficientHiSam
-from .efficient_sam.efficient_sam_encoder import ImageEncoderViT as eImageEncoderViT
-from .efficient_sam.efficient_sam_decoder import MaskDecoder as eMaskDecoder
 from .efficient_sam.efficient_sam_decoder import HiDecoder as eHiDecoder
+from .efficient_sam.efficient_sam_decoder import MaskDecoder as eMaskDecoder
 from .efficient_sam.efficient_sam_decoder import PromptEncoder as ePromptEncoder
+from .efficient_sam.efficient_sam_encoder import ImageEncoderViT as eImageEncoderViT
 from .efficient_sam.two_way_transformer import TwoWayTransformer as eTwoWayTransformer
+from .hi_sam import HiSam
+from .image_encoder import ImageEncoderViT
+from .mask_decoder import HiDecoder, MaskDecoder
+from .modal_aligner import ModalAligner
+from .prompt_encoder import PromptEncoder
+from .transformer import TwoWayTransformer
 
 
 def build_sam_vit_h(args):
@@ -59,17 +56,13 @@ def build_sam_vit_b(args):
 
 def build_efficient_sam_vit_s(args):
     return _build_efficient_sam(
-        encoder_patch_embed_dim=384,
-        encoder_num_heads=6,
-        args=args
+        encoder_patch_embed_dim=384, encoder_num_heads=6, args=args
     )
-    
+
 
 def build_efficient_sam_vit_t(args):
     return _build_efficient_sam(
-        encoder_patch_embed_dim=192,
-        encoder_num_heads=3,
-        args=args
+        encoder_patch_embed_dim=192, encoder_num_heads=3, args=args
     )
 
 
@@ -112,9 +105,7 @@ def _build_sam(
             out_chans=prompt_embed_dim,
         ),
         modal_aligner=ModalAligner(
-            prompt_embed_dim,
-            attn_layers=args.attn_layers,
-            prompt_len=args.prompt_len
+            prompt_embed_dim, attn_layers=args.attn_layers, prompt_len=args.prompt_len
         ),
         prompt_encoder=PromptEncoder(
             embed_dim=prompt_embed_dim,
@@ -155,32 +146,41 @@ def _build_sam(
         with open(checkpoint, "rb") as f:
             state_dict = torch.load(f, map_location="cpu")
         dict_keys = state_dict.keys()
-        if 'optimizer' in dict_keys or 'lr_scheduler' in dict_keys or 'epoch' in dict_keys:
-            state_dict = state_dict['model']
+        if (
+            "optimizer" in dict_keys
+            or "lr_scheduler" in dict_keys
+            or "epoch" in dict_keys
+        ):
+            state_dict = state_dict["model"]
         dict_keys = state_dict.keys()
 
         # check whether to use the paras. of SAM's mask decoder to initialize H-Decoder
         if args.hier_det:
             contain_hi_decoder = False
             for key in dict_keys:
-                if 'hi_decoder' in key:
+                if "hi_decoder" in key:
                     contain_hi_decoder = True
                     break
             if not contain_hi_decoder:
                 ckpt_dir = os.path.dirname(checkpoint)
-                with open(os.path.join('pretrained_checkpoint', args.model_type+'_maskdecoder.pth'), "rb") as f:
+                with open(
+                    os.path.join(
+                        "pretrained_checkpoint", args.model_type + "_maskdecoder.pth"
+                    ),
+                    "rb",
+                ) as f:
                     mask_decoder_dict = torch.load(f)
                 for key, value in mask_decoder_dict.items():
-                    new_key = key.replace('mask_decoder', 'hi_decoder')
+                    new_key = key.replace("mask_decoder", "hi_decoder")
                     state_dict[new_key] = value
 
         # load SAM's ViT backbone paras.
-        if args.model_type == 'vit_b':
-            sam_path = os.path.join('pretrained_checkpoint', 'sam_vit_b_01ec64.pth')
-        elif args.model_type == 'vit_l':
-            sam_path = os.path.join('pretrained_checkpoint', 'sam_vit_l_0b3195.pth')
-        elif args.model_type == 'vit_h':
-            sam_path = os.path.join('pretrained_checkpoint', 'sam_vit_h_4b8939.pth')
+        if args.model_type == "vit_b":
+            sam_path = os.path.join("pretrained_checkpoint", "sam_vit_b_01ec64.pth")
+        elif args.model_type == "vit_l":
+            sam_path = os.path.join("pretrained_checkpoint", "sam_vit_l_0b3195.pth")
+        elif args.model_type == "vit_h":
+            sam_path = os.path.join("pretrained_checkpoint", "sam_vit_h_4b8939.pth")
         with open(sam_path, "rb") as f:
             sam_dict = torch.load(f)
         for key, value in sam_dict.items():
@@ -211,16 +211,18 @@ def _build_efficient_sam(encoder_patch_embed_dim, encoder_num_heads, args):
     activation = "gelu"
     normalization_type = "layer_norm"
     normalize_before_activation = False
-    image_embedding_size = img_size // (encoder_patch_size if encoder_patch_size > 0 else 1)
+    image_embedding_size = img_size // (
+        encoder_patch_size if encoder_patch_size > 0 else 1
+    )
     prompt_embed_dim = 256
     checkpoint = args.checkpoint
-    
+
     assert activation == "relu" or activation == "gelu"
     if activation == "relu":
         activation_fn = nn.ReLU
     else:
         activation_fn = nn.GELU
-    
+
     model = EfficientHiSam(
         image_encoder=eImageEncoderViT(
             img_size=img_size,
@@ -230,12 +232,10 @@ def _build_efficient_sam(encoder_patch_embed_dim, encoder_num_heads, args):
             depth=encoder_depth,
             num_heads=encoder_num_heads,
             mlp_ratio=encoder_mlp_ratio,
-            neck_dims=encoder_neck_dims
+            neck_dims=encoder_neck_dims,
         ),
         modal_aligner=ModalAligner(
-            prompt_embed_dim,
-            attn_layers=args.attn_layers,
-            prompt_len=args.prompt_len
+            prompt_embed_dim, attn_layers=args.attn_layers, prompt_len=args.prompt_len
         ),
         prompt_encoder=ePromptEncoder(
             embed_dim=prompt_embed_dim,
@@ -264,7 +264,7 @@ def _build_efficient_sam(encoder_patch_embed_dim, encoder_num_heads, args):
         pixel_mean=[123.675, 116.28, 103.53],
         pixel_std=[58.395, 57.12, 57.375],
     )
-    
+
     if args.hier_det:
         model.hier_det = True
         model.hi_decoder = eHiDecoder(
@@ -285,25 +285,30 @@ def _build_efficient_sam(encoder_patch_embed_dim, encoder_num_heads, args):
             iou_head_hidden_dim=iou_head_hidden_dim,
             upscaling_layer_dims=decoder_upscaling_layer_dims,
         )
-    
+
     if checkpoint is not None:
         with open(checkpoint, "rb") as f:
             state_dict = torch.load(f, map_location="cpu")
-        if 'model' in state_dict.keys():
-            state_dict = state_dict['model']
+        if "model" in state_dict.keys():
+            state_dict = state_dict["model"]
         if args.hier_det:
             contain_hi_decoder = False
             for key in state_dict.keys():
-                if 'hi_decoder' in key:
+                if "hi_decoder" in key:
                     contain_hi_decoder = True
                     break
             if not contain_hi_decoder:
-                with open(os.path.join('pretrained_checkpoint', args.model_type+'_maskdecoder.pth'), "rb") as f_maskdecoder:
+                with open(
+                    os.path.join(
+                        "pretrained_checkpoint", args.model_type + "_maskdecoder.pth"
+                    ),
+                    "rb",
+                ) as f_maskdecoder:
                     mask_decoder_dict = torch.load(f_maskdecoder)
                 for key, value in mask_decoder_dict.items():
-                    new_key = key.replace('mask_decoder', 'hi_decoder')
+                    new_key = key.replace("mask_decoder", "hi_decoder")
                     state_dict[new_key] = value
         info = model.load_state_dict(state_dict, strict=False)
         print(info)
-        
+
     return model
