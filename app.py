@@ -17,6 +17,8 @@ from hi_sam.modeling.build import model_registry
 
 app = FastAPI(title="Hi-SAM Text Detection API", version="1.0.0")
 
+CHECKPOINT_REPO_ID = "creative-graphic-design/hi-sam-checkpoints"
+
 
 class TextDetectionConfig(BaseModel):
     model_type: str = "vit_l"
@@ -34,7 +36,7 @@ class TextDetectionConfig(BaseModel):
     @field_validator("checkpoint", mode="before")
     def validate_checkpoint(cls, checkpoint_filename: str):
         checkpoint_path = hf_hub_download(
-            repo_id="creative-graphic-design/hi-sam-checkpoints",
+            repo_id=CHECKPOINT_REPO_ID,
             filename=checkpoint_filename,
         )
         return checkpoint_path
