@@ -1,22 +1,15 @@
-import sys
 
 import torch
 from torch.nn import functional as F
-from typing import List, Optional
-import utils.misc as misc
+from typing import List
 
 
-def mean_square_loss(
-        inputs: torch.Tensor,
-        targets: torch.Tensor
-):
+def mean_square_loss(inputs: torch.Tensor, targets: torch.Tensor):
     loss = F.mse_loss(inputs, targets)
     return loss
 
 
-mean_square_loss_jit = torch.jit.script(
-    mean_square_loss
-)  # type: torch.jit.ScriptModule
+mean_square_loss_jit = torch.jit.script(mean_square_loss)  # type: torch.jit.ScriptModule
 
 
 def loss_iou_mse(pred_iou, src_masks, target_masks):
@@ -42,7 +35,9 @@ def loss_iou_mse(pred_iou, src_masks, target_masks):
 def loss_hi_iou_mse(pred_iou, src_masks, mask_thresh, target_masks):
     # src_masks: logits
     with torch.no_grad():
-        target_masks = F.interpolate(target_masks, src_masks.shape[-2:], mode="bilinear", align_corners=False)
+        target_masks = F.interpolate(
+            target_masks, src_masks.shape[-2:], mode="bilinear", align_corners=False
+        )
         target_masks = (target_masks > 0.5).type(torch.int).flatten(1)
         src_masks = (src_masks > mask_thresh).type(torch.int).flatten(1)
         area_src = src_masks.sum(dim=1)
@@ -91,7 +86,11 @@ def cat(tensors: List[torch.Tensor], dim: int = 0):
 
 
 def get_uncertain_point_coords_with_randomness(
-    coarse_logits, uncertainty_func, num_points, oversample_ratio, importance_sample_ratio
+    coarse_logits,
+    uncertainty_func,
+    num_points,
+    oversample_ratio,
+    importance_sample_ratio,
 ):
     """
     Sample points in [0, 1] x [0, 1] coordinate space based on their uncertainty. The unceratinties
@@ -128,7 +127,9 @@ def get_uncertain_point_coords_with_randomness(
     num_uncertain_points = int(importance_sample_ratio * num_points)
     num_random_points = num_points - num_uncertain_points
     idx = torch.topk(point_uncertainties[:, 0, :], k=num_uncertain_points, dim=1)[1]
-    shift = num_sampled * torch.arange(num_boxes, dtype=torch.long, device=coarse_logits.device)
+    shift = num_sampled * torch.arange(
+        num_boxes, dtype=torch.long, device=coarse_logits.device
+    )
     idx += shift[:, None]
     point_coords = point_coords.view(-1, 2)[idx.view(-1), :].view(
         num_boxes, num_uncertain_points, 2
@@ -137,7 +138,9 @@ def get_uncertain_point_coords_with_randomness(
         point_coords = cat(
             [
                 point_coords,
-                torch.rand(num_boxes, num_random_points, 2, device=coarse_logits.device),
+                torch.rand(
+                    num_boxes, num_random_points, 2, device=coarse_logits.device
+                ),
             ],
             dim=1,
         )
@@ -145,10 +148,10 @@ def get_uncertain_point_coords_with_randomness(
 
 
 def dice_loss(
-        inputs: torch.Tensor,
-        targets: torch.Tensor,
-        num_masks: float,
-    ):
+    inputs: torch.Tensor,
+    targets: torch.Tensor,
+    num_masks: float,
+):
     """
     Compute the DICE loss, similar to generalized IOU for masks
     Args:
@@ -166,16 +169,14 @@ def dice_loss(
     return loss.sum() / num_masks
 
 
-dice_loss_jit = torch.jit.script(
-    dice_loss
-)  # type: torch.jit.ScriptModule
+dice_loss_jit = torch.jit.script(dice_loss)  # type: torch.jit.ScriptModule
 
 
 def sigmoid_ce_loss(
-        inputs: torch.Tensor,
-        targets: torch.Tensor,
-        num_masks: float,
-    ):
+    inputs: torch.Tensor,
+    targets: torch.Tensor,
+    num_masks: float,
+):
     """
     Args:
         inputs: A float tensor of arbitrary shape.
@@ -191,19 +192,17 @@ def sigmoid_ce_loss(
     return loss.mean(1).sum() / num_masks
 
 
-sigmoid_ce_loss_jit = torch.jit.script(
-    sigmoid_ce_loss
-)  # type: torch.jit.ScriptModule
+sigmoid_ce_loss_jit = torch.jit.script(sigmoid_ce_loss)  # type: torch.jit.ScriptModule
 
 
 def sigmoid_focal_loss(
-        inputs: torch.Tensor,
-        targets: torch.Tensor,
-        num_masks: float,
-        alpha: float = 0.25,
-        gamma: float = 2,
-        mask_threshold: float = 0.0
-    ):
+    inputs: torch.Tensor,
+    targets: torch.Tensor,
+    num_masks: float,
+    alpha: float = 0.25,
+    gamma: float = 2,
+    mask_threshold: float = 0.0,
+):
     prob = inputs.sigmoid()
     # prob = (inputs > mask_threshold).type(torch.float32)
     ce_loss = F.binary_cross_entropy_with_logits(inputs, targets, reduction="none")
@@ -217,9 +216,7 @@ def sigmoid_focal_loss(
     return loss.mean(1).sum() / num_masks
 
 
-sigmoid_focal_loss_jit = torch.jit.script(
-    sigmoid_focal_loss
-)  # type: torch.jit.ScriptModule
+sigmoid_focal_loss_jit = torch.jit.script(sigmoid_focal_loss)  # type: torch.jit.ScriptModule
 
 
 def calculate_uncertainty(logits):
@@ -249,7 +246,9 @@ def loss_masks(src_masks, target_masks, num_masks):
     return loss_focal, loss_dice
 
 
-def loss_hi_masks(src_masks, target_masks, num_masks, oversample_ratio=3.0, num_points=128 * 128):
+def loss_hi_masks(
+    src_masks, target_masks, num_masks, oversample_ratio=3.0, num_points=128 * 128
+):
     with torch.no_grad():
         # sample point_coords
         point_coords = get_uncertain_point_coords_with_randomness(

@@ -5,8 +5,6 @@ from torch import nn, Tensor
 from .mlp import MLPBlock
 
 
-
-
 class TwoWayTransformer(nn.Module):
     def __init__(
         self,
@@ -205,9 +203,9 @@ class AttentionForTwoWayAttentionBlock(nn.Module):
         self.embedding_dim = embedding_dim
         self.internal_dim = embedding_dim // downsample_rate
         self.num_heads = num_heads
-        assert (
-            self.internal_dim % num_heads == 0
-        ), "num_heads must divide embedding_dim."
+        assert self.internal_dim % num_heads == 0, (
+            "num_heads must divide embedding_dim."
+        )
         self.c_per_head = self.internal_dim / num_heads
         self.inv_sqrt_c_per_head = 1.0 / math.sqrt(self.c_per_head)
 

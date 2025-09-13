@@ -1,9 +1,8 @@
-import math
 from typing import Any, Dict, List, Tuple
 
 import torch
 import torch.nn.functional as F
-from torch import nn, Tensor
+from torch import nn
 
 from .efficient_sam.efficient_sam_decoder import MaskDecoder, PromptEncoder
 from .efficient_sam.efficient_sam_encoder import ImageEncoderViT
@@ -42,20 +41,22 @@ class EfficientHiSam(nn.Module):
             if "Adapter" not in n:
                 p.requires_grad = False
         print("Freeze image encoder.")
-        
+
         self.prompt_encoder = prompt_encoder
         for p in self.prompt_encoder.parameters():
             p.requires_grad = False
-        
+
         self.modal_aligner = modal_aligner
         self.decoder_max_num_input_points = decoder_max_num_input_points
         self.mask_decoder = mask_decoder
-        self.register_buffer("pixel_mean", torch.Tensor(pixel_mean).view(-1, 1, 1), False)
+        self.register_buffer(
+            "pixel_mean", torch.Tensor(pixel_mean).view(-1, 1, 1), False
+        )
         self.register_buffer("pixel_std", torch.Tensor(pixel_std).view(-1, 1, 1), False)
-        
+
         self.hier_det = False
         self.hi_decoder = None
-    
+
     @property
     def device(self) -> Any:
         return self.pixel_mean.device
@@ -80,12 +81,14 @@ class EfficientHiSam(nn.Module):
             low_res_mask: A tensor of shape [B, 256, 256] of predicted masks
             iou_predictions: A tensor of shape [B, max_num_queries] of estimated IOU scores
         """
-        input_images = torch.stack([self.preprocess(x["image"]) for x in batched_input], dim=0)
-        
+        input_images = torch.stack(
+            [self.preprocess(x["image"]) for x in batched_input], dim=0
+        )
+
         image_embeddings = self.image_encoder(input_images)
-        
+
         sparse_emb = self.modal_aligner(image_embeddings)
-        
+
         up_masks_logits = []
         up_masks = []
         iou_preds = []
@@ -96,13 +99,15 @@ class EfficientHiSam(nn.Module):
             hi_masks_logits = []
             hi_iou_preds = []
             word_masks_logits = []
-        
-        for image_record, curr_embedding, sparse_embeddings in zip(batched_input, image_embeddings, sparse_emb):
+
+        for image_record, curr_embedding, sparse_embeddings in zip(
+            batched_input, image_embeddings, sparse_emb
+        ):
             low_res_masks, high_res_masks, iou_pred, iou_pred_hr = self.mask_decoder(
-              image_embeddings=curr_embedding.unsqueeze(0),
-              image_pe=self.prompt_encoder.get_dense_pe(),
-              sparse_prompt_embeddings=sparse_embeddings.unsqueeze(0),
-              multimask_output=False
+                image_embeddings=curr_embedding.unsqueeze(0),
+                image_pe=self.prompt_encoder.get_dense_pe(),
+                sparse_prompt_embeddings=sparse_embeddings.unsqueeze(0),
+                multimask_output=False,
             )
             iou_preds.append(iou_pred)
             iou_preds_hr.append(iou_pred_hr)
@@ -120,37 +125,52 @@ class EfficientHiSam(nn.Module):
             up_masks.append(upscaled_masks > self.mask_threshold)
             hr_masks_logits.append(high_res_masks)
             hr_masks.append(high_res_masks > self.mask_threshold)
-            
+
             if self.hier_det:
                 point_embeddings = self.prompt_encoder(
-                      image_record["point_coords"],
-                      image_record["point_labels"]
-                  )
+                    image_record["point_coords"], image_record["point_labels"]
+                )
                 hi_masks, hi_iou_pred, word_masks = self.hi_decoder(
                     image_embeddings=curr_embedding.unsqueeze(0),
                     image_pe=self.prompt_encoder.get_dense_pe(),
                     sparse_prompt_embeddings=point_embeddings,
-                    multimask_output=True
+                    multimask_output=True,
                 )
                 hi_masks_logits.append(hi_masks)  # [kk, 3, 256, 256]
                 hi_iou_preds.append(hi_iou_pred)
                 word_masks_logits.append(word_masks)
-        
+
         up_masks_logits = torch.cat(up_masks_logits, dim=0)
         up_masks = torch.cat(up_masks, dim=0)
         iou_preds = torch.cat(iou_preds, dim=0)
         hr_masks_logits = torch.cat(hr_masks_logits, dim=0)
         hr_masks = torch.cat(hr_masks, dim=0)
         iou_preds_hr = torch.cat(iou_preds_hr, dim=0)
-        
+
         if self.hier_det:
             hi_masks_logits = torch.cat(hi_masks_logits, dim=0)
             hi_iou_preds = torch.cat(hi_iou_preds, dim=0)
             word_masks_logits = torch.cat(word_masks_logits, dim=0)
-            return (up_masks_logits, up_masks, iou_preds, hr_masks_logits, hr_masks, iou_preds_hr,
-                    hi_masks_logits, hi_iou_preds, word_masks_logits)
+            return (
+                up_masks_logits,
+                up_masks,
+                iou_preds,
+                hr_masks_logits,
+                hr_masks,
+                iou_preds_hr,
+                hi_masks_logits,
+                hi_iou_preds,
+                word_masks_logits,
+            )
         else:
-          return up_masks_logits, up_masks, iou_preds, hr_masks_logits, hr_masks, iou_preds_hr
+            return (
+                up_masks_logits,
+                up_masks,
+                iou_preds,
+                hr_masks_logits,
+                hr_masks,
+                iou_preds_hr,
+            )
 
     def postprocess_masks(
         self,
@@ -180,14 +200,16 @@ class EfficientHiSam(nn.Module):
             align_corners=False,
         )
         masks = masks[..., : input_size[0], : input_size[1]]
-        masks = F.interpolate(masks, original_size, mode="bilinear", align_corners=False)
+        masks = F.interpolate(
+            masks, original_size, mode="bilinear", align_corners=False
+        )
         return masks
-      
+
     def preprocess(self, x: torch.Tensor) -> torch.Tensor:
         """Normalize pixel values and pad to a square input."""
         # Normalize colors
         x = (x - self.pixel_mean) / self.pixel_std
-        
+
         # Pad
         h, w = x.shape[-2:]
         padh = self.image_encoder.img_size - h

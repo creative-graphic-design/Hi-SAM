@@ -5,7 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import math
-from typing import List, Optional, Tuple, Type
+from typing import List
 
 import torch
 import torch.nn as nn
@@ -140,9 +140,9 @@ class Block(nn.Module):
         self.MLP_Adapter = Adapter(dim, skip_connect=False)
 
     def forward(self, x):
-        #x = x + self.attn(self.norm1(x))
-        #x = x + self.mlp(self.norm2(x))
-        #return x
+        # x = x + self.attn(self.norm1(x))
+        # x = x + self.mlp(self.norm2(x))
+        # return x
 
         shortcut = x
         x = self.norm1(x)
@@ -217,7 +217,7 @@ class ImageEncoderViT(nn.Module):
         super().__init__()
 
         self.img_size = img_size
-        self.image_embedding_size = img_size // ((patch_size if patch_size > 0 else 1))
+        self.image_embedding_size = img_size // (patch_size if patch_size > 0 else 1)
         self.transformer_output_dim = ([patch_embed_dim] + neck_dims)[-1]
         self.pretrain_use_cls_token = True
         pretrain_img_size = 224
@@ -251,9 +251,9 @@ class ImageEncoderViT(nn.Module):
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        assert (
-            x.shape[2] == self.img_size and x.shape[3] == self.img_size
-        ), "input image size must match self.img_size"
+        assert x.shape[2] == self.img_size and x.shape[3] == self.img_size, (
+            "input image size must match self.img_size"
+        )
         x = self.patch_embed(x)
         # B C H W -> B H W C
         x = x.permute(0, 2, 3, 1)
@@ -271,7 +271,9 @@ class ImageEncoderViT(nn.Module):
 
 
 class Adapter(nn.Module):
-    def __init__(self, D_features, mlp_ratio=0.25, act_layer=nn.GELU, skip_connect=True):
+    def __init__(
+        self, D_features, mlp_ratio=0.25, act_layer=nn.GELU, skip_connect=True
+    ):
         super().__init__()
         self.skip_connect = skip_connect
         D_hidden_features = int(D_features * mlp_ratio)

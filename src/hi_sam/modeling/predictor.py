@@ -56,7 +56,9 @@ class SamPredictor:
         # import pdb;pdb.set_trace()
         input_image = self.transform.apply_image(image)
         input_image_torch = torch.as_tensor(input_image, device=self.device)
-        input_image_torch = input_image_torch.permute(2, 0, 1).contiguous()[None, :, :, :]
+        input_image_torch = input_image_torch.permute(2, 0, 1).contiguous()[
+            None, :, :, :
+        ]
 
         self.set_torch_image(input_image_torch, image.shape[:2])
 
@@ -81,7 +83,9 @@ class SamPredictor:
             len(transformed_image.shape) == 4
             and transformed_image.shape[1] == 3
             and max(*transformed_image.shape[2:]) == self.model.image_encoder.img_size
-        ), f"set_torch_image input must be BCHW with long side {self.model.image_encoder.img_size}."
+        ), (
+            f"set_torch_image input must be BCHW with long side {self.model.image_encoder.img_size}."
+        )
         self.reset_image()
 
         self.original_size = original_image_size
@@ -122,21 +126,36 @@ class SamPredictor:
             instead of a binary mask.
         """
         if not self.is_image_set:
-            raise RuntimeError("An image must be set with .set_image(...) before mask prediction.")
+            raise RuntimeError(
+                "An image must be set with .set_image(...) before mask prediction."
+            )
 
         if hier_det:
-            assert point_coords is not None and point_labels is not None, \
+            assert point_coords is not None and point_labels is not None, (
                 "point_coords and point_labels must be supplied"
+            )
             point_coords = self.transform.apply_coords(point_coords, self.original_size)
-            coords_torch = torch.as_tensor(point_coords, dtype=torch.float, device=self.device)
-            labels_torch = torch.as_tensor(point_labels, dtype=torch.int, device=self.device)
+            coords_torch = torch.as_tensor(
+                point_coords, dtype=torch.float, device=self.device
+            )
+            labels_torch = torch.as_tensor(
+                point_labels, dtype=torch.int, device=self.device
+            )
             coords_torch, labels_torch = coords_torch[:, None, :], labels_torch[:, None]
-            masks, hr_masks, iou_predictions, iou_predictions_hr, hi_masks, hi_iou, word_masks = self.predict_torch(
+            (
+                masks,
+                hr_masks,
+                iou_predictions,
+                iou_predictions_hr,
+                hi_masks,
+                hi_iou,
+                word_masks,
+            ) = self.predict_torch(
                 multimask_output,
                 return_logits=return_logits,
                 hier_det=True,
                 point_coords=coords_torch,
-                point_labels=labels_torch
+                point_labels=labels_torch,
             )
             masks_np = masks[0].detach().cpu().numpy()
             hr_masks_np = hr_masks[0].detach().cpu().numpy()
@@ -145,8 +164,15 @@ class SamPredictor:
             hi_masks_np = hi_masks.detach().cpu().numpy()
             hi_iou_np = hi_iou.detach().cpu().numpy()
             word_masks_np = word_masks.detach().cpu().numpy()
-            return (masks_np, hr_masks_np, iou_predictions_np, iou_predictions_hr_np,
-                    hi_masks_np, hi_iou_np, word_masks_np)
+            return (
+                masks_np,
+                hr_masks_np,
+                iou_predictions_np,
+                iou_predictions_hr_np,
+                hi_masks_np,
+                hi_iou_np,
+                word_masks_np,
+            )
         else:
             masks, hr_masks, iou_predictions, iou_predictions_hr = self.predict_torch(
                 multimask_output,
@@ -160,12 +186,12 @@ class SamPredictor:
 
     @torch.no_grad()
     def predict_torch(
-            self,
-            multimask_output: bool = False,
-            return_logits: bool = False,
-            hier_det: bool = False,
-            point_coords: Optional[np.ndarray] = None,
-            point_labels: Optional[np.ndarray] = None,
+        self,
+        multimask_output: bool = False,
+        return_logits: bool = False,
+        hier_det: bool = False,
+        point_coords: Optional[np.ndarray] = None,
+        point_labels: Optional[np.ndarray] = None,
     ):
         """
         Predict masks for the given input prompts, using the currently set image.
@@ -194,7 +220,9 @@ class SamPredictor:
             instead of a binary mask.
         """
         if not self.is_image_set:
-            raise RuntimeError("An image must be set with .set_image(...) before mask prediction.")
+            raise RuntimeError(
+                "An image must be set with .set_image(...) before mask prediction."
+            )
 
         sparse_emb = self.model.modal_aligner(self.features)
 
@@ -206,15 +234,19 @@ class SamPredictor:
         )
 
         # Upscale the masks to the original image resolution
-        masks = self.model.postprocess_masks(low_res_masks, self.input_size, self.original_size)
-        hr_masks = self.model.postprocess_masks(high_res_masks, self.input_size, self.original_size)
+        masks = self.model.postprocess_masks(
+            low_res_masks, self.input_size, self.original_size
+        )
+        hr_masks = self.model.postprocess_masks(
+            high_res_masks, self.input_size, self.original_size
+        )
 
         if not hier_det:
             if not return_logits:
                 masks = masks > self.model.mask_threshold
                 hr_masks = hr_masks > self.model.mask_threshold
             return masks, hr_masks, iou_pred, iou_pred_hr
-            
+
         else:
             points = (point_coords, point_labels)
             point_embeddings, _ = self.model.prompt_encoder(
@@ -224,14 +256,26 @@ class SamPredictor:
                 image_embeddings=self.features,
                 image_pe=self.model.prompt_encoder.get_dense_pe(),
                 sparse_prompt_embeddings=point_embeddings,
-                multimask_output=True
+                multimask_output=True,
             )
-            hi_masks = self.model.postprocess_masks(hi_masks[:, 1:, :, :], self.input_size, self.original_size)
-            word_masks = self.model.postprocess_masks(word_masks, self.input_size, self.original_size)
+            hi_masks = self.model.postprocess_masks(
+                hi_masks[:, 1:, :, :], self.input_size, self.original_size
+            )
+            word_masks = self.model.postprocess_masks(
+                word_masks, self.input_size, self.original_size
+            )
             if not return_logits:
                 hi_masks = hi_masks > self.model.mask_threshold
                 word_masks = word_masks > self.model.mask_threshold
-            return masks, hr_masks, iou_pred, iou_pred_hr, hi_masks, iou_pred_hi, word_masks
+            return (
+                masks,
+                hr_masks,
+                iou_pred,
+                iou_pred_hr,
+                hi_masks,
+                iou_pred_hi,
+                word_masks,
+            )
 
     def get_image_embedding(self) -> torch.Tensor:
         """
@@ -243,7 +287,9 @@ class SamPredictor:
             raise RuntimeError(
                 "An image must be set with .set_image(...) to generate an embedding."
             )
-        assert self.features is not None, "Features must exist if an image has been set."
+        assert self.features is not None, (
+            "Features must exist if an image has been set."
+        )
         return self.features
 
     @property
