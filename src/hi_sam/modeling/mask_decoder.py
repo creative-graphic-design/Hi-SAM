@@ -4,11 +4,11 @@
 # This source code is licensed under the license found in the
 # LICENSE file in the root directory of this source tree.
 
+from typing import List, Type
+
 import torch
 from torch import nn
 from torch.nn import functional as F
-
-from typing import List, Type
 
 from .common import LayerNorm2d
 

@@ -1,8 +1,10 @@
 import copy
 import itertools
+from collections import OrderedDict
+
 import numpy as np
 import torch
-from collections import OrderedDict
+
 from utils import misc
 
 

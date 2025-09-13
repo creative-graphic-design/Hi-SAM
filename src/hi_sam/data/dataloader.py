@@ -2,37 +2,33 @@
 # All rights reserved.
 
 ## data loader
-from __future__ import print_function, division
+from __future__ import division, print_function
 
 import copy
+import json
 import numbers
-
-import numpy as np
-import random
-from copy import deepcopy
-
-from skimage import io
 import os
+import random
+import time
+from collections.abc import Sequence
+from copy import deepcopy
 from glob import glob
 from typing import List, Optional
-from collections.abc import Sequence
-import json
-import time
+
 import cv2
-
-
+import numpy as np
 import torch
-from torch.utils.data import Dataset, DataLoader, ConcatDataset
+import torch.nn.functional as F
+from skimage import io
+from torch.utils.data import ConcatDataset, DataLoader, Dataset
+from torch.utils.data.distributed import DistributedSampler
 from torchvision import transforms
 from torchvision.transforms.functional import (
     adjust_brightness,
     adjust_contrast,
-    adjust_saturation,
     adjust_hue,
+    adjust_saturation,
 )
-import torch.nn.functional as F
-from torch.utils.data.distributed import DistributedSampler
-
 
 #### --------------------- dataloader online ---------------------####
 

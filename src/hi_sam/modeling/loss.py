@@ -1,7 +1,8 @@
 
+from typing import List
+
 import torch
 from torch.nn import functional as F
-from typing import List
 
 
 def mean_square_loss(inputs: torch.Tensor, targets: torch.Tensor):

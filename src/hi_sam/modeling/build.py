@@ -4,25 +4,24 @@
 # This source code is licensed under the license found in the
 # LICENSE file in the root directory of this source tree.
 
+import os
+from functools import partial
+
 import torch
 from torch import nn
 
-from functools import partial
-import os
-
-from .image_encoder import ImageEncoderViT
-from .mask_decoder import MaskDecoder, HiDecoder
-from .prompt_encoder import PromptEncoder
-from .hi_sam import HiSam
-from .transformer import TwoWayTransformer
-from .modal_aligner import ModalAligner
-
 from .efficient_hi_sam import EfficientHiSam
-from .efficient_sam.efficient_sam_encoder import ImageEncoderViT as eImageEncoderViT
-from .efficient_sam.efficient_sam_decoder import MaskDecoder as eMaskDecoder
 from .efficient_sam.efficient_sam_decoder import HiDecoder as eHiDecoder
+from .efficient_sam.efficient_sam_decoder import MaskDecoder as eMaskDecoder
 from .efficient_sam.efficient_sam_decoder import PromptEncoder as ePromptEncoder
+from .efficient_sam.efficient_sam_encoder import ImageEncoderViT as eImageEncoderViT
 from .efficient_sam.two_way_transformer import TwoWayTransformer as eTwoWayTransformer
+from .hi_sam import HiSam
+from .image_encoder import ImageEncoderViT
+from .mask_decoder import HiDecoder, MaskDecoder
+from .modal_aligner import ModalAligner
+from .prompt_encoder import PromptEncoder
+from .transformer import TwoWayTransformer
 
 
 def build_sam_vit_h(args):
