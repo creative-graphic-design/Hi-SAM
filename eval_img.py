@@ -1,13 +1,11 @@
+import copy
 import os.path
-import sys
+from collections import OrderedDict
+from glob import glob
 
 import numpy as np
-import torch
 from skimage import io
-from glob import glob
 from tqdm import tqdm
-from collections import OrderedDict
-import copy
 
 
 def get_IandU(pred, gt, m=None):
@@ -35,7 +33,7 @@ def get_IandU(pred, gt, m=None):
 
     cmp = np.bincount((pred + gt * bdd_index).flatten())
     cm = np.zeros((bdd_index * bdd_index)).astype(int)
-    cm[0:len(cmp)] = cmp
+    cm[0 : len(cmp)] = cmp
     cm = cm.reshape(bdd_index, bdd_index)
     pdn = cm.sum(axis=0)
     gtn = cm.sum(axis=1)
@@ -71,21 +69,21 @@ def label_count(x, m=None):
 
 result_folder = "img_eval"
 gt_folder = "datasets/HierText/test_gt"
-gts = glob(gt_folder+'/*')
-semantic_classname = {0: 'background', 1: 'text'}
+gts = glob(gt_folder + "/*")
+semantic_classname = {0: "background", 1: "text"}
 predictions = []
 for gt_name in tqdm(gts):
-    img_id = os.path.basename(gt_name).split('.')[0]
+    img_id = os.path.basename(gt_name).split(".")[0]
     gt_data = io.imread(gt_name)
     gt_data = (gt_data > 127).astype(np.uint8) * 255
     if len(gt_data.shape) > 2:
         gt_data = gt_data[:, :, 0]
 
-    res_data = io.imread(os.path.join(result_folder, img_id+'.png'))
+    res_data = io.imread(os.path.join(result_folder, img_id + ".png"))
     res_data = res_data > 127
 
     img_result_dict = get_IandU(res_data, gt_data)
-    gn = label_count((gt_data>127).astype(int))
+    gn = label_count((gt_data > 127).astype(int))
     pn = label_count(res_data)
     img_result_dict.update(pred_num=pn, gt_num=gn)
     predictions.append(img_result_dict)
@@ -114,8 +112,12 @@ recl_imwise[final_gn == 0] = 0
 prec_imwise = prec_imwise.mean(axis=0)
 recl_imwise = recl_imwise.mean(axis=0)
 fscore_imwise = 2 * prec_imwise * recl_imwise / (prec_imwise + recl_imwise)
-results['---mIOU'] = float(miou)
+results["---mIOU"] = float(miou)
 for idx in range(1, len(iou)):  # ignore background
-    results[str(idx).zfill(3)+'-' + semantic_classname[idx]+'-IOU'] = float(iou[idx])
-    results[str(idx).zfill(3) + '-' + semantic_classname[idx] + '-Fscore'] = float(fscore_imwise[idx])
+    results[str(idx).zfill(3) + "-" + semantic_classname[idx] + "-IOU"] = float(
+        iou[idx]
+    )
+    results[str(idx).zfill(3) + "-" + semantic_classname[idx] + "-Fscore"] = float(
+        fscore_imwise[idx]
+    )
 print(results)

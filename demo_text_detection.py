@@ -1,54 +1,75 @@
-import json
-import sys
-
-import numpy as np
-import torch
-import matplotlib.pyplot as plt
-import cv2
-import skimage
-import os
 import argparse
-from hi_sam.modeling.build import model_registry
-from hi_sam.modeling.auto_mask_generator import AutoMaskGenerator
 import glob
-from tqdm import tqdm
-from PIL import Image
+import os
 import random
-from utils import utilities
-from shapely.geometry import Polygon
-import pyclipper
-import datetime
 import warnings
+
+import cv2
+import matplotlib.pyplot as plt
+import numpy as np
+import pyclipper
+import torch
+from shapely.geometry import Polygon
+from tqdm import tqdm
+
+from hi_sam.modeling.auto_mask_generator import AutoMaskGenerator
+from hi_sam.modeling.build import model_registry
+
 warnings.filterwarnings("ignore")
 
 
 def get_args_parser():
-    parser = argparse.ArgumentParser('Hi-SAM', add_help=False)
+    parser = argparse.ArgumentParser("Hi-SAM", add_help=False)
 
-    parser.add_argument("--input", type=str, required=True, nargs="+",
-                        help="Path to the input image")
-    parser.add_argument("--output", type=str, default='./demo',
-                        help="A file or directory to save output visualizations.")
-    parser.add_argument("--model-type", type=str, default="vit_l",
-                        help="The type of model to load, in ['vit_h', 'vit_l', 'vit_b']")
-    parser.add_argument("--checkpoint", type=str, required=True,
-                        help="The path to the SAM checkpoint to use for mask generation.")
-    parser.add_argument("--device", type=str, default="cuda",
-                        help="The device to run generation on.")
+    parser.add_argument(
+        "--input", type=str, required=True, nargs="+", help="Path to the input image"
+    )
+    parser.add_argument(
+        "--output",
+        type=str,
+        default="./demo",
+        help="A file or directory to save output visualizations.",
+    )
+    parser.add_argument(
+        "--model-type",
+        type=str,
+        default="vit_l",
+        help="The type of model to load, in ['vit_h', 'vit_l', 'vit_b']",
+    )
+    parser.add_argument(
+        "--checkpoint",
+        type=str,
+        required=True,
+        help="The path to the SAM checkpoint to use for mask generation.",
+    )
+    parser.add_argument(
+        "--device", type=str, default="cuda", help="The device to run generation on."
+    )
     parser.add_argument("--hier_det", default=True)
-    parser.add_argument("--dataset", type=str, required=True, default='totaltext',
-                        help="'totaltext' or 'ctw1500', or 'ic15'.")
-    parser.add_argument("--vis", action='store_true')
-    parser.add_argument("--zero_shot", action='store_true')
+    parser.add_argument(
+        "--dataset",
+        type=str,
+        required=True,
+        default="totaltext",
+        help="'totaltext' or 'ctw1500', or 'ic15'.",
+    )
+    parser.add_argument("--vis", action="store_true")
+    parser.add_argument("--zero_shot", action="store_true")
 
-    parser.add_argument('--seed', default=42, type=int)
-    parser.add_argument('--input_size', default=[1024, 1024], type=list)
+    parser.add_argument("--seed", default=42, type=int)
+    parser.add_argument("--input_size", default=[1024, 1024], type=list)
 
     # self-prompting
-    parser.add_argument('--attn_layers', default=1, type=int,
-                        help='The number of image to token cross attention layers in model_aligner')
-    parser.add_argument('--prompt_len', default=12, type=int, help='The number of prompt token')
-    parser.add_argument('--layout_thresh', type=float, default=0.5)
+    parser.add_argument(
+        "--attn_layers",
+        default=1,
+        type=int,
+        help="The number of image to token cross attention layers in model_aligner",
+    )
+    parser.add_argument(
+        "--prompt_len", default=12, type=int, help="The number of prompt token"
+    )
+    parser.add_argument("--layout_thresh", type=float, default=0.5)
     return parser.parse_args()
 
 
@@ -110,7 +131,11 @@ def show_mask(mask, ax, random_color=False, color=None):
     if random_color:
         color = np.concatenate([np.random.random(3), np.array([0.6])], axis=0)
     else:
-        color = color if color is not None else np.array([30/255, 144/255, 255/255, 0.5])
+        color = (
+            color
+            if color is not None
+            else np.array([30 / 255, 144 / 255, 255 / 255, 0.5])
+        )
     h, w = mask.shape[-2:]
     mask_image = mask.reshape(h, w, 1) * color.reshape(1, 1, -1)
     ax.imshow(mask_image)
@@ -131,12 +156,12 @@ def show_masks(masks, filename, image):
         #     pts = pts.astype(np.int32)
         #     mask = cv2.fillPoly(np.zeros(mask.shape), [pts], 1)
         show_mask(mask, plt.gca(), random_color=True)
-    plt.axis('off')
-    plt.savefig(filename, bbox_inches='tight', pad_inches=0)
+    plt.axis("off")
+    plt.savefig(filename, bbox_inches="tight", pad_inches=0)
     plt.close()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     args = get_args_parser()
     seed = args.seed
     torch.manual_seed(seed)
@@ -150,7 +175,7 @@ if __name__ == '__main__':
     print("Loaded model")
     amg = AutoMaskGenerator(hisam)
 
-    if args.dataset == 'totaltext':
+    if args.dataset == "totaltext":
         if args.zero_shot:
             fg_points_num = 50  # assemble text kernel
             score_thresh = 0.3
@@ -158,7 +183,7 @@ if __name__ == '__main__':
         else:
             fg_points_num = 500
             score_thresh = 0.95
-    elif args.dataset == 'ctw1500':
+    elif args.dataset == "ctw1500":
         if args.zero_shot:
             fg_points_num = 100
             score_thresh = 0.6
@@ -169,16 +194,18 @@ if __name__ == '__main__':
         raise ValueError
 
     if os.path.isdir(args.input[0]):
-        args.input = [os.path.join(args.input[0], fname) for fname in os.listdir(args.input[0])]
+        args.input = [
+            os.path.join(args.input[0], fname) for fname in os.listdir(args.input[0])
+        ]
     elif len(args.input) == 1:
         args.input = glob.glob(os.path.expanduser(args.input[0]))
         assert args.input, "The input path(s) was not found"
     for path in tqdm(args.input):
-        img_id = os.path.basename(path).split('.')[0]
+        img_id = os.path.basename(path).split(".")[0]
 
         if os.path.isdir(args.output):
             assert os.path.isdir(args.output), args.output
-            img_name = os.path.basename(path).split('.')[0] + '.png'
+            img_name = os.path.basename(path).split(".")[0] + ".png"
             out_filename = os.path.join(args.output, img_name)
         else:
             assert len(args.input) == 1
@@ -196,11 +223,11 @@ if __name__ == '__main__':
             score_thresh=score_thresh,
             nms_thresh=score_thresh,
             zero_shot=args.zero_shot,
-            dataset=args.dataset
+            dataset=args.dataset,
         )
 
         if masks is not None:
-            print('Inference done. Start plotting masks.')
+            print("Inference done. Start plotting masks.")
             show_masks(masks, out_filename, image)
         else:
-            print('no prediction')
+            print("no prediction")

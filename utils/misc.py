@@ -4,32 +4,21 @@ Misc functions, including distributed helpers.
 
 Mostly copy-paste from torchvision references.
 """
-import os
-import random 
-import subprocess
-import sys
-import time
-from collections import OrderedDict, defaultdict, deque
-import datetime
-import pickle
-from typing import Optional, List
-import functools
 
-import json, time
+import datetime
+import functools
+import os
+import pickle
+import random
+import subprocess
+import time
+from collections import defaultdict, deque
+
 import numpy as np
 import torch
 import torch.distributed as dist
-from torch import Tensor
-
-import colorsys
-import torch.nn.functional as F
-
-import cv2
-from PIL import Image
-import matplotlib.pyplot as plt
 
 # needed due to empty tensor bug in pytorch and torchvision 0.5
-import torchvision
 
 
 class SmoothedValue(object):
@@ -56,7 +45,7 @@ class SmoothedValue(object):
         """
         if not is_dist_avail_and_initialized():
             return
-        t = torch.tensor([self.count, self.total], dtype=torch.float64, device='cuda')
+        t = torch.tensor([self.count, self.total], dtype=torch.float64, device="cuda")
         dist.barrier()
         dist.all_reduce(t)
         t = t.tolist()
@@ -93,7 +82,8 @@ class SmoothedValue(object):
             avg=self.avg,
             global_avg=self.global_avg,
             max=self.max,
-            value=self.value)
+            value=self.value,
+        )
 
 
 def all_gather(data):
@@ -127,7 +117,9 @@ def all_gather(data):
     for _ in size_list:
         tensor_list.append(torch.empty((max_size,), dtype=torch.uint8, device="cuda"))
     if local_size != max_size:
-        padding = torch.empty(size=(max_size - local_size,), dtype=torch.uint8, device="cuda")
+        padding = torch.empty(
+            size=(max_size - local_size,), dtype=torch.uint8, device="cuda"
+        )
         tensor = torch.cat((tensor, padding), dim=0)
     dist.all_gather(tensor_list, tensor)
 
@@ -183,8 +175,9 @@ class MetricLogger(object):
             return self.meters[attr]
         if attr in self.__dict__:
             return self.__dict__[attr]
-        raise AttributeError("'{}' object has no attribute '{}'".format(
-            type(self).__name__, attr))
+        raise AttributeError(
+            "'{}' object has no attribute '{}'".format(type(self).__name__, attr)
+        )
 
     def __str__(self):
         loss_str = []
@@ -192,9 +185,7 @@ class MetricLogger(object):
             # print(name, str(meter))
             # import ipdb;ipdb.set_trace()
             if meter.count > 0:
-                loss_str.append(
-                    "{}: {}".format(name, str(meter))
-                )
+                loss_str.append("{}: {}".format(name, str(meter)))
         return self.delimiter.join(loss_str)
 
     def synchronize_between_processes(self):
@@ -212,31 +203,35 @@ class MetricLogger(object):
 
         i = 0
         if not header:
-            header = ''
+            header = ""
         start_time = time.time()
         end = time.time()
-        iter_time = SmoothedValue(fmt='{avg:.4f}')
-        data_time = SmoothedValue(fmt='{avg:.4f}')
-        space_fmt = ':' + str(len(str(len(iterable)))) + 'd'
+        iter_time = SmoothedValue(fmt="{avg:.4f}")
+        data_time = SmoothedValue(fmt="{avg:.4f}")
+        space_fmt = ":" + str(len(str(len(iterable)))) + "d"
         if torch.cuda.is_available():
-            log_msg = self.delimiter.join([
-                header,
-                '[{0' + space_fmt + '}/{1}]',
-                'eta: {eta}',
-                '{meters}',
-                'time: {time}',
-                'data: {data}',
-                'max mem: {memory:.0f}'
-            ])
+            log_msg = self.delimiter.join(
+                [
+                    header,
+                    "[{0" + space_fmt + "}/{1}]",
+                    "eta: {eta}",
+                    "{meters}",
+                    "time: {time}",
+                    "data: {data}",
+                    "max mem: {memory:.0f}",
+                ]
+            )
         else:
-            log_msg = self.delimiter.join([
-                header,
-                '[{0' + space_fmt + '}/{1}]',
-                'eta: {eta}',
-                '{meters}',
-                'time: {time}',
-                'data: {data}'
-            ])
+            log_msg = self.delimiter.join(
+                [
+                    header,
+                    "[{0" + space_fmt + "}/{1}]",
+                    "eta: {eta}",
+                    "{meters}",
+                    "time: {time}",
+                    "data: {data}",
+                ]
+            )
         MB = 1024.0 * 1024.0
         for obj in iterable:
             data_time.update(time.time() - end)
@@ -247,38 +242,54 @@ class MetricLogger(object):
                 eta_seconds = iter_time.global_avg * (len(iterable) - i)
                 eta_string = str(datetime.timedelta(seconds=int(eta_seconds)))
                 if torch.cuda.is_available():
-                    print_func(log_msg.format(
-                        i, len(iterable), eta=eta_string,
-                        meters=str(self),
-                        time=str(iter_time), data=str(data_time),
-                        memory=torch.cuda.max_memory_allocated() / MB))
+                    print_func(
+                        log_msg.format(
+                            i,
+                            len(iterable),
+                            eta=eta_string,
+                            meters=str(self),
+                            time=str(iter_time),
+                            data=str(data_time),
+                            memory=torch.cuda.max_memory_allocated() / MB,
+                        )
+                    )
                 else:
-                    print_func(log_msg.format(
-                        i, len(iterable), eta=eta_string,
-                        meters=str(self),
-                        time=str(iter_time), data=str(data_time)))
+                    print_func(
+                        log_msg.format(
+                            i,
+                            len(iterable),
+                            eta=eta_string,
+                            meters=str(self),
+                            time=str(iter_time),
+                            data=str(data_time),
+                        )
+                    )
             i += 1
             end = time.time()
         total_time = time.time() - start_time
         total_time_str = str(datetime.timedelta(seconds=int(total_time)))
-        print_func('{} Total time: {} ({:.4f} s / it)'.format(
-            header, total_time_str, total_time / len(iterable)))
+        print_func(
+            "{} Total time: {} ({:.4f} s / it)".format(
+                header, total_time_str, total_time / len(iterable)
+            )
+        )
 
 
 def get_sha():
     cwd = os.path.dirname(os.path.abspath(__file__))
 
     def _run(command):
-        return subprocess.check_output(command, cwd=cwd).decode('ascii').strip()
-    sha = 'N/A'
+        return subprocess.check_output(command, cwd=cwd).decode("ascii").strip()
+
+    sha = "N/A"
     diff = "clean"
-    branch = 'N/A'
+    branch = "N/A"
     try:
-        sha = _run(['git', 'rev-parse', 'HEAD'])
-        subprocess.check_output(['git', 'diff'], cwd=cwd)
-        diff = _run(['git', 'diff-index', 'HEAD'])
+        sha = _run(["git", "rev-parse", "HEAD"])
+        subprocess.check_output(["git", "diff"], cwd=cwd)
+        diff = _run(["git", "diff-index", "HEAD"])
         diff = "has uncommited changes" if diff else "clean"
-        branch = _run(['git', 'rev-parse', '--abbrev-ref', 'HEAD'])
+        branch = _run(["git", "rev-parse", "--abbrev-ref", "HEAD"])
     except Exception:
         pass
     message = f"sha: {sha}, status: {diff}, branch: {branch}"
@@ -290,10 +301,11 @@ def setup_for_distributed(is_master):
     This function disables printing when not in master process
     """
     import builtins as __builtin__
+
     builtin_print = __builtin__.print
 
     def print(*args, **kwargs):
-        force = kwargs.pop('force', False)
+        force = kwargs.pop("force", False)
         if is_master or force:
             builtin_print(*args, **kwargs)
 
@@ -330,7 +342,9 @@ def save_on_master(*args, **kwargs):
 
 
 def init_distributed_mode(args):
-    if 'WORLD_SIZE' in os.environ and os.environ['WORLD_SIZE'] != '': # 'RANK' in os.environ and 
+    if (
+        "WORLD_SIZE" in os.environ and os.environ["WORLD_SIZE"] != ""
+    ):  # 'RANK' in os.environ and
         # args.rank = int(os.environ["RANK"])
         # args.world_size = int(os.environ['WORLD_SIZE'])
         # args.gpu = args.local_rank = int(os.environ['LOCAL_RANK'])
@@ -341,33 +355,51 @@ def init_distributed_mode(args):
         # Multi nodes
         #   python -m torch.distributed.launch --nproc_per_node=8 main.py --world-size 2 --rank 0 --dist-url 'tcp://IP_OF_NODE0:FREEPORT' ...
         #   python -m torch.distributed.launch --nproc_per_node=8 main.py --world-size 2 --rank 1 --dist-url 'tcp://IP_OF_NODE0:FREEPORT' ...
-        local_world_size = int(os.environ['WORLD_SIZE'])
+        local_world_size = int(os.environ["WORLD_SIZE"])
         args.world_size = args.world_size * local_world_size
-        args.gpu = args.local_rank = int(os.environ['LOCAL_RANK'])
+        args.gpu = args.local_rank = int(os.environ["LOCAL_RANK"])
         args.rank = args.rank * local_world_size + args.local_rank
-        print('world size: {}, rank: {}, local rank: {}'.format(args.world_size, args.rank, args.local_rank))
+        print(
+            "world size: {}, rank: {}, local rank: {}".format(
+                args.world_size, args.rank, args.local_rank
+            )
+        )
         # print(json.dumps(dict(os.environ), indent=2))
-    elif 'SLURM_PROCID' in os.environ:
-        args.rank = int(os.environ['SLURM_PROCID'])
-        args.gpu = args.local_rank = int(os.environ['SLURM_LOCALID'])
-        args.world_size = int(os.environ['SLURM_NPROCS'])
+    elif "SLURM_PROCID" in os.environ:
+        args.rank = int(os.environ["SLURM_PROCID"])
+        args.gpu = args.local_rank = int(os.environ["SLURM_LOCALID"])
+        args.world_size = int(os.environ["SLURM_NPROCS"])
 
-        print('world size: {}, world rank: {}, local rank: {}, device_count: {}'.format(args.world_size, args.rank, args.local_rank, torch.cuda.device_count()))
+        print(
+            "world size: {}, world rank: {}, local rank: {}, device_count: {}".format(
+                args.world_size, args.rank, args.local_rank, torch.cuda.device_count()
+            )
+        )
     else:
-        print('Not using distributed mode')
+        print("Not using distributed mode")
         args.distributed = False
         args.world_size = 1
         args.rank = 0
         args.local_rank = 0
         return
 
-    print("world_size:{} rank:{} local_rank:{}".format(args.world_size, args.rank, args.local_rank))
+    print(
+        "world_size:{} rank:{} local_rank:{}".format(
+            args.world_size, args.rank, args.local_rank
+        )
+    )
     args.distributed = True
     torch.cuda.set_device(args.local_rank)
-    args.dist_backend = 'nccl'
-    print('| distributed init (rank {}): {}'.format(args.rank, args.dist_url), flush=True)
-    torch.distributed.init_process_group(backend=args.dist_backend, init_method=args.dist_url,
-                                         world_size=args.world_size, rank=args.rank)
+    args.dist_backend = "nccl"
+    print(
+        "| distributed init (rank {}): {}".format(args.rank, args.dist_url), flush=True
+    )
+    torch.distributed.init_process_group(
+        backend=args.dist_backend,
+        init_method=args.dist_url,
+        world_size=args.world_size,
+        rank=args.rank,
+    )
     print("Before torch.distributed.barrier()")
     torch.distributed.barrier()
     print("End torch.distributed.barrier()")
@@ -438,8 +470,15 @@ def gather(data, dst=0, group=None):
         return []
 
 
-def sample_foreground_points(batch_labels, batch_para_masks, batch_line_masks,
-                             batch_word_masks, batch_line2para_idx, k=20, np_per_line=2):
+def sample_foreground_points(
+    batch_labels,
+    batch_para_masks,
+    batch_line_masks,
+    batch_word_masks,
+    batch_line2para_idx,
+    k=20,
+    np_per_line=2,
+):
     fg_points, select_line_masks, select_para_masks, select_word_masks = [], [], [], []
     only_line = False
     if len(batch_line_masks) > 0 and len(batch_word_masks) == 0:
@@ -455,9 +494,7 @@ def sample_foreground_points(batch_labels, batch_para_masks, batch_line_masks,
     for b_i in range(len(batch_labels)):
         line_masks = batch_line_masks[b_i].to(dev)
         # filter line masks without intersection with stroke mask
-        intersection = (
-                (batch_labels[b_i] * line_masks) > 127
-        )  # (nl, h, w)
+        intersection = (batch_labels[b_i] * line_masks) > 127  # (nl, h, w)
         intersec_num = torch.sum(intersection.flatten(1), dim=1)
         keep_index = torch.nonzero(intersec_num).reshape(-1)
         keep_num = keep_index.numel()
@@ -489,15 +526,24 @@ def sample_foreground_points(batch_labels, batch_para_masks, batch_line_masks,
         line_masks = torch.repeat_interleave(line_masks, np_per_line, dim=0)
         if not only_line:
             para_masks = torch.repeat_interleave(para_masks, np_per_line, dim=0)
-            word_masks_per_line = torch.repeat_interleave(word_masks_per_line, np_per_line, dim=0)
-        pos_idx = np.ravel([
-            random.sample(range(start_idx[p_i].item(), intersec_cumsum[p_i].item()), np_per_line)
-            for p_i in range(keep_num)
-        ])
+            word_masks_per_line = torch.repeat_interleave(
+                word_masks_per_line, np_per_line, dim=0
+            )
+        pos_idx = np.ravel(
+            [
+                random.sample(
+                    range(start_idx[p_i].item(), intersec_cumsum[p_i].item()),
+                    np_per_line,
+                )
+                for p_i in range(keep_num)
+            ]
+        )
 
         sampled_x = x_idx[pos_idx]
         sampled_y = y_idx[pos_idx]
-        sampled_xy = torch.cat((sampled_x[:, None], sampled_y[:, None]), dim=1)  # (k, 2)
+        sampled_xy = torch.cat(
+            (sampled_x[:, None], sampled_y[:, None]), dim=1
+        )  # (k, 2)
         # if sampled_xy.shape[0] == 0:
         #     sampled_xy = torch.tensor([[w/2, h/2]], dtype=torch.float32, device=dev)
         #     para_masks = torch.zeros((1, h, w)).to(para_masks)
