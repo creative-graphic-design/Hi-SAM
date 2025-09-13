@@ -5,13 +5,13 @@ import random
 import warnings
 
 import cv2
-import matplotlib.pyplot as plt
 import numpy as np
-import pyclipper
 import torch
-from shapely.geometry import Polygon
 from tqdm import tqdm
 
+from hi_sam.demo.config_utils import get_detection_params
+from hi_sam.demo.mask_utils import create_binary_mask
+from hi_sam.demo.visualization import show_masks
 from hi_sam.modeling.auto_mask_generator import AutoMaskGenerator
 from hi_sam.modeling.build import model_registry
 
@@ -74,105 +74,6 @@ def get_args_parser():
     return parser.parse_args()
 
 
-def unclip(p, unclip_ratio=2.0):
-    poly = Polygon(p)
-    distance = poly.area * unclip_ratio / poly.length
-    offset = pyclipper.PyclipperOffset()
-    offset.AddPath(p, pyclipper.JT_ROUND, pyclipper.ET_CLOSEDPOLYGON)
-    expanded = np.array(offset.Execute(distance))
-    return expanded
-
-
-def polygon2rbox(polygon, image_height, image_width):
-    rect = cv2.minAreaRect(polygon)
-    corners = cv2.boxPoints(rect)
-    corners = np.array(corners, dtype="int")
-    pts = get_tight_rect(corners, 0, 0, image_height, image_width, 1)
-    pts = np.array(pts).reshape(-1, 2)
-    return pts
-
-
-def get_tight_rect(points, start_x, start_y, image_height, image_width, scale):
-    points = list(points)
-    ps = sorted(points, key=lambda x: x[0])
-
-    if ps[1][1] > ps[0][1]:
-        px1 = ps[0][0] * scale + start_x
-        py1 = ps[0][1] * scale + start_y
-        px4 = ps[1][0] * scale + start_x
-        py4 = ps[1][1] * scale + start_y
-    else:
-        px1 = ps[1][0] * scale + start_x
-        py1 = ps[1][1] * scale + start_y
-        px4 = ps[0][0] * scale + start_x
-        py4 = ps[0][1] * scale + start_y
-    if ps[3][1] > ps[2][1]:
-        px2 = ps[2][0] * scale + start_x
-        py2 = ps[2][1] * scale + start_y
-        px3 = ps[3][0] * scale + start_x
-        py3 = ps[3][1] * scale + start_y
-    else:
-        px2 = ps[3][0] * scale + start_x
-        py2 = ps[3][1] * scale + start_y
-        px3 = ps[2][0] * scale + start_x
-        py3 = ps[2][1] * scale + start_y
-
-    px1 = min(max(px1, 1), image_width - 1)
-    px2 = min(max(px2, 1), image_width - 1)
-    px3 = min(max(px3, 1), image_width - 1)
-    px4 = min(max(px4, 1), image_width - 1)
-    py1 = min(max(py1, 1), image_height - 1)
-    py2 = min(max(py2, 1), image_height - 1)
-    py3 = min(max(py3, 1), image_height - 1)
-    py4 = min(max(py4, 1), image_height - 1)
-    return [px1, py1, px2, py2, px3, py3, px4, py4]
-
-
-def show_mask(mask, ax, random_color=False, color=None):
-    if random_color:
-        color = np.concatenate([np.random.random(3), np.array([0.6])], axis=0)
-    else:
-        color = (
-            color
-            if color is not None
-            else np.array([30 / 255, 144 / 255, 255 / 255, 0.5])
-        )
-    h, w = mask.shape[-2:]
-    mask_image = mask.reshape(h, w, 1) * color.reshape(1, 1, -1)
-    ax.imshow(mask_image)
-
-
-def show_masks(masks, filename, image):
-    plt.figure(figsize=(15, 15))
-    plt.imshow(image)
-    for i, mask in enumerate(masks):
-        mask = mask[0].astype(np.uint8)
-        # contours, _ = cv2.findContours(mask, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
-        # for cont in contours:
-        #     epsilon = 0.002 * cv2.arcLength(cont, True)
-        #     approx = cv2.approxPolyDP(cont, epsilon, True)
-        #     pts = approx.reshape((-1, 2))
-        #     if pts.shape[0] < 4:
-        #         continue
-        #     pts = pts.astype(np.int32)
-        #     mask = cv2.fillPoly(np.zeros(mask.shape), [pts], 1)
-        show_mask(mask, plt.gca(), random_color=True)
-    plt.axis("off")
-    plt.savefig(filename, bbox_inches="tight", pad_inches=0)
-    plt.close()
-
-
-def create_binary_mask(masks, image_shape):
-    h, w = image_shape[:2]
-    binary_mask = np.zeros((h, w), dtype=np.uint8)
-
-    if masks is not None:
-        for mask in masks:
-            mask_data = mask[0].astype(np.uint8)
-            binary_mask = np.logical_or(binary_mask, mask_data).astype(np.uint8)
-
-    binary_mask = binary_mask * 255
-    return binary_mask
 
 
 if __name__ == "__main__":
@@ -189,23 +90,9 @@ if __name__ == "__main__":
     print("Loaded model")
     amg = AutoMaskGenerator(hisam)
 
-    if args.dataset == "totaltext":
-        if args.zero_shot:
-            fg_points_num = 50  # assemble text kernel
-            score_thresh = 0.3
-            unclip_ratio = 1.5
-        else:
-            fg_points_num = 500
-            score_thresh = 0.95
-    elif args.dataset == "ctw1500":
-        if args.zero_shot:
-            fg_points_num = 100
-            score_thresh = 0.6
-        else:
-            fg_points_num = 300
-            score_thresh = 0.7
-    else:
-        raise ValueError
+    params = get_detection_params(args.dataset, args.zero_shot)
+    fg_points_num = params["fg_points_num"]
+    score_thresh = params["score_thresh"]
 
     if os.path.isdir(args.input[0]):
         args.input = [
