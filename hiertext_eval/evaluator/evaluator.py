@@ -5,10 +5,7 @@ from typing import Dict, List, Union
 
 import numpy as np
 
-from . import np_box_mask_list
-from . import np_box_mask_list_ops
-from . import polygon_list
-from . import polygon_ops
+from . import np_box_mask_list, np_box_mask_list_ops, polygon_list, polygon_ops
 
 
 class TextBoxRep(enum.Enum):

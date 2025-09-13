@@ -1,7 +1,8 @@
-from glob import glob
-from tqdm import tqdm
-import json
 import argparse
+import json
+from glob import glob
+
+from tqdm import tqdm
 
 
 def get_args_parser():

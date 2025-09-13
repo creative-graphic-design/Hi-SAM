@@ -23,16 +23,12 @@ Example box operations that are supported:
   * IOU: pairwise intersection-over-union scores
 """
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
+from __future__ import absolute_import, division, print_function
 
 import numpy as np
 from six.moves import range
 
-from . import np_box_list_ops
-from . import np_box_mask_list
-from . import np_mask_ops
+from . import np_box_list_ops, np_box_mask_list, np_mask_ops
 
 
 def box_list_to_box_mask_list(boxlist):

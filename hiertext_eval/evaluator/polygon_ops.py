@@ -1,12 +1,9 @@
 """Operations for polygon lists."""
 
-from absl import logging
 import numpy as np
+from absl import logging
 
-from . import np_box_list
-from . import np_box_list_ops
-from . import polygon_list
-
+from . import np_box_list, np_box_list_ops, polygon_list
 
 EPSILON = 1e-5
 

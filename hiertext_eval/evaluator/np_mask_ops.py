@@ -23,14 +23,11 @@ Example mask operations that are supported:
   * IOU: pairwise intersection-over-union scores
 """
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
+from __future__ import absolute_import, division, print_function
 
 import numpy as np
 
 from . import np_box_list_ops
-
 
 EPSILON = 1e-7
 

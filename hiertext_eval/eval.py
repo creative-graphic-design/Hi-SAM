@@ -4,15 +4,12 @@ import json
 import time
 from typing import Sequence
 
-from absl import app
-from absl import flags
 import apache_beam as beam
-from apache_beam.options.pipeline_options import PipelineOptions
 import cv2
 import numpy as np
-
+from absl import app, flags
+from apache_beam.options.pipeline_options import PipelineOptions
 from evaluator import evaluator
-
 
 _GT = flags.DEFINE_string("gt", None, "Groundtruth JSON file.")
 _RESULT = flags.DEFINE_string("result", None, "Prediction JSON file.")
